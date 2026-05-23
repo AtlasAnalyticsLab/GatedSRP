@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local data, embeddings, checkpoints, and logs are intentionally not versioned.
+data/raw/**
+data/features/**
+data/labels/**
+!data/raw/.gitkeep
+!data/features/.gitkeep
+!data/labels/.gitkeep
+runs/
+logs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+
+# Maintainer-only notes generated during this release audit.
+.release_audit/
+.env.local
+
+# Paper is still under review; add public citation metadata after acceptance.
+CITATION.cff

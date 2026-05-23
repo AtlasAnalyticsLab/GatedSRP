@@ -1,0 +1,6 @@
+cohort	method	delta_scale	gate_hidden_dim	completed_runs	expected_runs
+KIRC	Gated SRP (ours)	1.5	128	5	5
+KIRP	Gated SRP (ours)	2.0	32	5	5
+LUAD	Gated SRP (ours)	1.0	128	5	5
+STAD	Gated SRP (ours)	0.5	128	5	5
+UCEC	Gated SRP (ours)	1.5	32	5	5

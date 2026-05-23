@@ -1,0 +1,17 @@
+# Install a CUDA-matched PyTorch wheel first, for example:
+#   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+numpy
+pandas
+scipy
+scikit-learn
+h5py
+pillow
+tqdm
+wandb
+matplotlib
+seaborn
+statsmodels
+timm
+einops
+openslide-python
+pytest

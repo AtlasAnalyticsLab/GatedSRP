@@ -1,0 +1,26 @@
+name: gatedsrp
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy
+      - pandas
+      - scipy
+      - scikit-learn
+      - h5py
+      - pillow
+      - tqdm
+      - wandb
+      - matplotlib
+      - seaborn
+      - statsmodels
+      - timm
+      - einops
+      - openslide-python
+      - pytest
+
+# Recommended after creation:
+#   conda activate gatedsrp
+#   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
