@@ -252,7 +252,7 @@ def _matched_mlp_control_hidden_dim(
     improvement is generic extra nonlinear capacity rather than SRP geometry.
     A full D x D adapter would dwarf the gate, so this helper estimates the
     active full-gate parameter count and picks the nearest shared per-head MLP
-    bottleneck.  For the paper-ready default (6 heads, head_dim 64,
+    bottleneck.  For the reported default (6 heads, head_dim 64,
     gate_hidden_dim 64), this selects rank 2: 322 adapter parameters versus
     roughly 351 gate parameters per active block.
     """

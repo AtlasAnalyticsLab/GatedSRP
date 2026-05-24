@@ -5,6 +5,26 @@ description = "Reproducibility code for Gated Spatial Redundancy Projection."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
+classifiers = [
+    "License :: Free for non-commercial use",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "h5py",
+    "pillow",
+    "tqdm",
+    "wandb",
+    "matplotlib",
+    "seaborn",
+    "statsmodels",
+    "timm",
+    "einops",
+    "openslide-python",
+    "pytest",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

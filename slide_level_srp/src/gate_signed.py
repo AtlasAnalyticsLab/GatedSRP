@@ -577,7 +577,7 @@ class GateStatsAccumulator:
                 # toward smaller magnitudes, particularly when either
                 # vector has a non-zero mean. This was a real bug in
                 # the first implementation; the fix mirrors the W&B
-                # helper in panda/train.py::gate_diagnostics.
+                # helper in slide_level_srp/train_panda.py::gate_diagnostics.
                 if "h_local" in stats:
                     hl = stats["h_local"][b].float().detach().cpu().flatten()
                     be_pt = beta_eff[b].mean(dim=0).squeeze(-1)  # (N,)

@@ -1,8 +1,8 @@
-"""CAMELYON17 UNI-v2 slide adapter for paper-ready SRP experiments.
+"""CAMELYON17 UNI-v2 slide adapter for reproducibility SRP runs.
 
 The historical CAM17 path in :mod:`slide_level.src.data` points at UNI-v1
-1024-d features under ``20x_256px_0px_overlap/features_uni_v1``.  Paper-ready
-classification should use the consistent UNI-v2, 20x, 256-pixel embedding
+1024-d features under ``20x_256px_0px_overlap/features_uni_v1``.  The
+reported classification runs use the consistent UNI-v2, 20x, 256-pixel embedding
 family once extraction has completed.  This adapter keeps CAM17's official
 patient/group fold logic and label mapping, but requires callers to opt into a
 separate dataset name so no run can silently mix feature families.

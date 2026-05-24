@@ -322,7 +322,7 @@ def test_I2_pre_attention_signed_gate_identity_matches_baseline():
 def test_I2b_mlp_control_identity_and_no_geometry_contract():
     """Plain-adapter control starts as baseline and needs no local geometry.
 
-    This is the paper-ready capacity-control arm.  The model output must not
+    This is the reported capacity-control arm.  The model output must not
     require h_local/h_morph, and same-seed construction must preserve the
     shared TransMIL initialization so differences are attributable only to the
     adapter after it learns.

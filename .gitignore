@@ -21,9 +21,9 @@ wandb/
 *.h5
 *.hdf5
 
-# Maintainer-only notes generated during this release audit.
+# Local notes generated during this release audit.
 .release_audit/
 .env.local
 
-# Paper is still under review; add public citation metadata after acceptance.
+# Add public citation metadata after publication.
 CITATION.cff

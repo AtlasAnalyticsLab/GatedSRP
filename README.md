@@ -2,16 +2,21 @@
 
 Reproducibility code for **Gated Spatial Redundancy Projection for Pathology Transformer Attentions**.
 
-This repository contains only the paper-facing training paths:
+This repository contains only the reproducibility training paths:
 
 - Classification: CAMELYON16, CAMELYON17, KGH, PANDA, and BRACS.
 - Survival: TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, and TCGA-UCEC.
 - Methods: Standard self-attention, XSA, Differential Transformer, and Gated SRP.
 
-The organization follows the public-release style used by
-[AtlasAnalyticsLab/MOOZY](https://github.com/AtlasAnalyticsLab/MOOZY): a short quick start here, detailed docs in `docs/`, runnable manifests in `configs/`, and paper tables in `results/paper/`.
+The repository is organized around a short quick start, detailed docs in
+`docs/`, runnable manifests in `configs/`, and reference tables in
+`results/`.
 
 ## Quick Start
+
+Choose one environment path.
+
+Conda:
 
 ```bash
 conda env create -f environment.yml
@@ -19,6 +24,25 @@ conda activate gatedsrp
 python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
 ```
+
+venv + pip:
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -r requirements.txt
+```
+
+uv:
+
+```bash
+uv sync --python 3.10
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+For CPU-only smoke tests, install the CPU PyTorch wheel instead.
 
 Prepare datasets and UNI-v2 H5 embeddings as described in:
 
@@ -44,7 +68,7 @@ Run the lightweight unit tests:
 python -m pytest tests -q
 ```
 
-Run the paper manifests:
+Run the full manifests:
 
 ```bash
 python scripts/run_manifest.py configs/paper_classification.tsv
@@ -63,21 +87,25 @@ python scripts/collect_paper_results.py --strict
 |---|---|
 | `slide_level_srp/` | Gated SRP, Diff Transformer comparator, slide/TCGA trainers, and dataset adapters. |
 | `slide_level/` | Baseline TransMIL/XSA components reused by the SRP trainer. |
-| `panda/` and `src/` | PANDA training entry point plus PANDA data/model helpers used for the paper PANDA row. |
+| `slide_level_srp/train_panda.py` and `src/` | PANDA training entry point plus PANDA data/model helpers. |
 | `configs/` | Exact paper run manifests and example path environment variables. |
 | `scripts/` | Manifest runner, H5 validator, AtlasPatch extraction template, and result collector. |
-| `results/paper/` | Paper-facing reference tables copied from the audited internal run package. |
+| `results/` | Reference result tables for reproducing the manuscript numbers. |
 | `docs/` | Dataset, embedding, and reproduction details. |
 
 ## Reference Results
 
-Paper tables are bundled as TSV files:
+Reference tables are bundled as TSV files:
 
-- [classification_main_table.tsv](results/paper/classification_main_table.tsv)
-- [tcga_survival_main_table.tsv](results/paper/tcga_survival_main_table.tsv)
+- [classification_main_table.tsv](results/classification_main_table.tsv)
+- [tcga_survival_main_table.tsv](results/tcga_survival_main_table.tsv)
 
 The manifests use five global seeds (`42` to `46`) for every dataset-method pair.
 
 ## Citation
 
 Citation metadata will be added after the paper review process is complete.
+
+## License
+
+This repository is released under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International. See [LICENSE](LICENSE).

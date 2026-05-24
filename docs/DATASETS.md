@@ -1,6 +1,9 @@
 # Datasets
 
-This repository does not redistribute WSIs or private labels. Download each dataset from its official source, place raw files under `data/raw/`, labels under `data/labels/`, and extracted H5 embeddings under `data/features/`.
+This repository does not redistribute WSIs or restricted-access labels.
+Download each dataset from its official source, place raw files under
+`data/raw/`, labels under `data/labels/`, and extracted H5 embeddings under
+`data/features/`.
 
 ## Expected Layout
 

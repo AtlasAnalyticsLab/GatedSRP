@@ -175,7 +175,7 @@ def is_method_param(name: str, ablation: str) -> bool:
             or name.startswith("context_scorer.")
         )
     if ablation in _MLP_CONTROL_ABLATIONS:
-        # Paper-ready mechanism-vs-capacity control: the only method surface
+        # Reported mechanism-vs-capacity control: the only method surface
         # is the no-geometry plain adapter.  beta_patch is a frozen zero
         # buffer and should not be counted as a trainable SRP mechanism.
         return ".mlp_control." in name or name.startswith("mlp_control.")
@@ -418,7 +418,7 @@ _ABLATIONS = {
         "beta_patch_mode": "zero",
         "srp_mode": "post_agg_rcd_learned_r",
     },
-    # --- Paper-ready capacity control: parameter-matched plain adapter.
+    # --- Reported capacity control: parameter-matched plain adapter.
     # z_i = y_i + Adapter(y_i), with Adapter's output path zero-initialized
     # and its bottleneck chosen to approximately match the current gate's
     # parameter count.  Unlike signed-gated SRP/RCD, this branch never receives

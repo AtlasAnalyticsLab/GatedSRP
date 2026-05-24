@@ -1,4 +1,4 @@
-"""TCGA-to-Atlas survival trainer for paper-ready gated-SRP experiments.
+"""TCGA-to-Atlas survival trainer for reported gated-SRP experiments.
 
 This is an additive entrypoint rather than a mode inside ``train.py``.  The
 classification path stays stable while survival gets its own case-level split
@@ -294,7 +294,7 @@ def parse_args():
         if args.fold is None:
             raise SystemExit("--fold is required when --split_mode case_level_5fold")
     else:
-        # For the paper-ready sweep the global seed is the single source of
+        # For the reported sweep the global seed is the single source of
         # split randomness.  Falling back to --seed keeps ad-hoc runs concise
         # while the generated manifests still write --global_seed explicitly.
         if args.global_seed is None:

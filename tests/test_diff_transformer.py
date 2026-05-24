@@ -1,4 +1,4 @@
-"""Tests for the paper-ready Diff Transformer comparator."""
+"""Tests for the reported Diff Transformer comparator."""
 
 from __future__ import annotations
 

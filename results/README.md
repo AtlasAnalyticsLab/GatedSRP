@@ -1,6 +1,6 @@
-# Paper Tables
+# Reference Tables
 
-This directory contains paper-facing reference TSVs from the audited internal run package.
+This directory contains reference TSVs for reproducing the manuscript numbers.
 
 | File | Purpose |
 |---|---|

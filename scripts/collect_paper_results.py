@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect rerun metrics into paper-shaped TSV summaries."""
+"""Collect rerun metrics into reference TSV summaries."""
 
 from __future__ import annotations
 

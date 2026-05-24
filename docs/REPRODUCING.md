@@ -1,12 +1,34 @@
-# Reproducing the Paper Runs
+# Reproducing the Reported Runs
 
 ## 1. Environment
+
+Choose one setup path. PyTorch is installed explicitly so you can select the
+CUDA or CPU wheel that matches your machine.
+
+### Conda
 
 ```bash
 conda env create -f environment.yml
 conda activate gatedsrp
 python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
+```
+
+### venv + pip
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -r requirements.txt
+```
+
+### uv
+
+```bash
+uv sync --python 3.10
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
 For CPU-only smoke tests, install the CPU PyTorch wheel instead.
@@ -70,8 +92,8 @@ This writes runs under `GATEDSRP_TCGA_SURVIVAL_OUT`, defaulting to `runs/tcga_su
 python scripts/collect_paper_results.py --strict
 ```
 
-Collected rerun summaries are written to `results/rerun/`. Reference paper tables are in `results/paper/`.
+Collected rerun summaries are written to `results/rerun/`. Reference tables are in `results/`.
 
 ## Notes on Compute
 
-The paper runs use batch size 1 with gradient accumulation. Large WSI bags can require a GPU with substantial memory; reduce pressure by lowering workers, using smaller shard batches during embedding extraction, or setting split caps only for debugging. Do not use caps for final reproduction unless you report that change.
+The reported runs use batch size 1 with gradient accumulation. Large WSI bags can require a GPU with substantial memory; reduce pressure by lowering workers, using smaller shard batches during embedding extraction, or setting split caps only for debugging. Do not use caps for final reproduction unless you report that change.

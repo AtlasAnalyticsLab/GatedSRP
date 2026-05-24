@@ -1,6 +1,6 @@
 """PANDA TransMIL architecture-family smoke tests.
 
-These tests keep the paper-ready PANDA TransMIL rerun path honest without
+These tests keep the reported PANDA TransMIL rerun path honest without
 touching real data or GPUs.  The important contract is that `--arch transmil`
 can instantiate and forward the same four method families used by the other
 WSI classification datasets: Standard SA, XSA, Differential Transformer, and
@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 def _parse_train_panda_args(monkeypatch: pytest.MonkeyPatch, *extra: str):
     """Use the real CLI parser so the smoke test covers validation defaults."""
-    import panda.train as train_panda
+    import slide_level_srp.train_panda as train_panda
 
     monkeypatch.setattr(
         sys,
@@ -82,7 +82,7 @@ def _tiny_batch(n_tokens: int = 5, in_dim: int = 1536) -> dict[str, torch.Tensor
 )
 def test_panda_transmil_paper_modes_forward(monkeypatch, mode: str, extra: list[str]) -> None:
     """Every paper method must produce finite six-class PANDA logits."""
-    import panda.train as train_panda
+    import slide_level_srp.train_panda as train_panda
 
     args = _parse_train_panda_args(monkeypatch, "--mode", mode, *extra)
     torch.manual_seed(7)
@@ -103,7 +103,7 @@ def test_panda_transmil_paper_modes_forward(monkeypatch, mode: str, extra: list[
 
 def test_panda_transmil_diff_uses_slide_level_comparator(monkeypatch) -> None:
     """`--arch transmil --mode diff_transformer` must not use the ViT wrapper."""
-    import panda.train as train_panda
+    import slide_level_srp.train_panda as train_panda
     from slide_level_srp.src.diff_transformer import NystromDiffTransformerAggregator
 
     args = _parse_train_panda_args(monkeypatch, "--mode", "diff_transformer")

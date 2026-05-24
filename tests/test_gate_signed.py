@@ -398,7 +398,7 @@ def test_I_gate_stats_accumulator_handles_empty_example() -> None:
 
 def test_J_panda_gate_diagnostics_handles_empty_example() -> None:
     """PANDA last-batch diagnostics should mirror the empty-stat policy."""
-    from panda.train import gate_diagnostics
+    from slide_level_srp.train_panda import gate_diagnostics
 
     class _FakeAttn:
         def __init__(self):

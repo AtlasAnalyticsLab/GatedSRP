@@ -1061,7 +1061,7 @@ def parse_args():
     if args.mode in {"srp_fixed_beta", "srp_mlp_control"} and args.arch != "transmil":
         raise SystemExit(
             f"[parse_args] --mode {args.mode} is defined for "
-            "--arch transmil in the paper-ready PANDA ablation expansion. "
+            "--arch transmil in the reported PANDA ablation expansion. "
             "Use srp_beta2 for the legacy ViT fixed-beta path."
         )
     if (

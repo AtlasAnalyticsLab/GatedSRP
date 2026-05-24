@@ -56,7 +56,7 @@ from slide_level_srp.src.gate_signed import TokenHeadGate, collect_gate_module_i
 # Number of token-level diagnostic features fed into the gate's
 # MLP_token. Must match the assemble order in `_make_gate_token_diag`
 # below: [h_local, neighbour_count/8, log_neighbour_count, log_norm_y_mean].
-# Exposed as a constant so panda/train.py can verify gate config without
+# Exposed as a constant so slide_level_srp/train_panda.py can verify gate config without
 # importing PandaAttention internals.
 PANDA_GATE_NUM_TOKEN_FEATURES = 4
 # Number of per-head diagnostic features. Order: [cos(y, r̂), |cos|, log_norm_y].
@@ -297,13 +297,13 @@ class PandaAttention(nn.Module):
             self.rcd_recomposer = None
             self.context_scorer = None
         # Per-forward gate-output cache for diagnostics. Populated by
-        # forward() when self.gate is not None; panda/train.py reads
+        # forward() when self.gate is not None; slide_level_srp/train_panda.py reads
         # this dict to log gate stats. Cleared at the start of every
         # forward to avoid leaking across calls.
         self._last_gate_stats: dict | None = None
         # Training-time cache for Phase11 gate containment.  The stats cache
         # above is detached on purpose for logging; this separate tensor stays
-        # attached to the gate computation so `panda/train.py` can add
+        # attached to the gate computation so `slide_level_srp/train_panda.py` can add
         # mean(beta_eff^2) to the loss without accidentally regularizing a
         # stale value from a previous batch.
         self._last_gate_beta_eff_for_loss: torch.Tensor | None = None
@@ -436,7 +436,7 @@ class PandaAttention(nn.Module):
         """
         # Reset the gate-stats cache at the start of every forward.
         # _last_gate_stats is populated only on the signed-gated path
-        # below; panda/train.py's diagnostic hook reads None when no
+        # below; slide_level_srp/train_panda.py's diagnostic hook reads None when no
         # gate is active so callers don't need to branch.
         self._last_gate_stats = None
         self._last_gate_beta_eff_for_loss = None

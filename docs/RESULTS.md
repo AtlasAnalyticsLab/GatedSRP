@@ -1,10 +1,10 @@
-# Paper Result Tables
+# Reference Result Tables
 
-Reference TSVs are stored in [results/paper](../results/paper).
+Reference TSVs are stored in [results](../results).
 
 ## Classification
 
-[classification_main_table.tsv](../results/paper/classification_main_table.tsv) contains the table values for:
+[classification_main_table.tsv](../results/classification_main_table.tsv) contains the table values for:
 
 - CAMELYON16: F1, accuracy, AUC
 - CAMELYON17: F1, accuracy, AUC
@@ -12,11 +12,11 @@ Reference TSVs are stored in [results/paper](../results/paper).
 - PANDA: quadratic kappa, F1, accuracy, AUC
 - BRACS: F1, accuracy, AUC
 
-PANDA uses the TransMIL architecture path in `python -m panda.train --arch transmil`, matching the paper table.
+PANDA uses the TransMIL architecture path in `python -m slide_level_srp.train_panda --arch transmil`, matching the reference table.
 
 ## TCGA Survival
 
-[tcga_survival_main_table.tsv](../results/paper/tcga_survival_main_table.tsv) reports case-level C-index for TCGA-KIRC, KIRP, LUAD, STAD, and UCEC.
+[tcga_survival_main_table.tsv](../results/tcga_survival_main_table.tsv) reports case-level C-index for TCGA-KIRC, KIRP, LUAD, STAD, and UCEC.
 
 The reported Gated SRP configs are:
 

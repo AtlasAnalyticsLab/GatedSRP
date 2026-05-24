@@ -327,7 +327,7 @@ def build_tcga_survival_seed_holdout_assignment(
 ) -> TCGASurvivalFoldAssignment:
     """Build one reproducible case-level train/val/test split from a global seed.
 
-    The paper-ready classification sweeps use five global seeds where the seed
+    The reported classification sweeps use five global seeds where the seed
     controls both split membership and training randomness.  Survival uses the
     same idea here while preserving the approved 5-fold test fraction: each
     seed stratifies cases into five outer parts and uses the first part as the
