@@ -47,6 +47,16 @@ You can use different roots by editing or sourcing [configs/paths.example.env](.
 | KGH | Local KGH cohort access is required. | Raw folder class names: `CP_HP`, `CP_SSL`, `CP_TA`, `CP_TVA`; normal slides are excluded. |
 | ADP | ADP Release1 data. | `ADP_EncodedLabels_Release1_Flat.csv` with the official train/valid/test split files. |
 
+## Which Data Each Manifest Needs
+
+| Manifest | Required datasets |
+|---|---|
+| `paper_classification.tsv` | CAMELYON16, CAMELYON17, KGH, PANDA, BRACS |
+| `paper_tcga_survival.tsv` | TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, TCGA-UCEC |
+| `paper_architecture_ablation.tsv` | ADP Release1 and PANDA |
+| `paper_design_ablation.tsv` | KIRP, LUAD, STAD, KGH, PANDA, BRACS, plus selected CAMELYON settings encoded in the manifest |
+| `paper_patch_encoder_ablation.tsv` | KGH, PANDA, BRACS, TCGA-KIRP, TCGA-LUAD, TCGA-STAD with the requested encoder features |
+
 ## Inclusion Rules
 
 The code mirrors the reported filtering:

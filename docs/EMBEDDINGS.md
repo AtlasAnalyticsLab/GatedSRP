@@ -41,6 +41,11 @@ AtlasPatch should write `data/features/camelyon17/patches/*.h5`. Point the corre
 export CAM17_UNIV2_ROOT=data/features/camelyon17/patches
 ```
 
+For large cohorts, run extraction once and treat the H5 files as immutable
+inputs to the training manifests. The row order of `/coords` and every
+`/features/<encoder>` matrix must match because the neighbor graph indexes rows
+directly.
+
 ## Dataset-Specific Targets
 
 | Dataset | Output root passed to trainer |

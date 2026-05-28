@@ -2,6 +2,15 @@
 
 Reference TSVs are stored in [results](../results).
 
+## Headline Summary
+
+| Claim checked by the bundled tables | Where to inspect |
+|---|---|
+| Best mean case-level C-index on all five TCGA survival cohorts | [tcga_survival_main_table.tsv](../results/tcga_survival_main_table.tsv) |
+| Improved NA on 12 of 16 reported classification metrics | [classification_main_table.tsv](../results/classification_main_table.tsv) |
+| Best mean AUC on three of five classification datasets | [classification_main_table.tsv](../results/classification_main_table.tsv) |
+| Works in dense full-attention settings, not only Nystrom attention | [ablation_architecture_choice.tsv](../results/ablation_architecture_choice.tsv) |
+
 ## Classification
 
 [classification_main_table.tsv](../results/classification_main_table.tsv) contains mean +/- sample standard deviation over five seeds for:

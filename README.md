@@ -1,25 +1,64 @@
-# GatedSRP
+# GatedSRP: Local Redundancy-Aware Attention for Pathology Transformers
 
-Reproducibility code for **Gated Spatial Redundancy Projection for Pathology Transformer Attentions**.
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+![PyTorch](https://img.shields.io/badge/PyTorch-tested-ee4c2c)
+![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-2e7d5b)
+![Results](https://img.shields.io/badge/reproduction-manifests%20included-28536b)
 
-This repository contains only the reproducibility training paths:
+**Gated Spatial Redundancy Projection (Gated SRP)** is a lightweight attention
+correction for whole-slide pathology transformers. It estimates the locally
+common tissue direction around each patch token and gives the model a signed,
+identity-initialized gate to subtract, preserve, or reflect that redundant
+component.
 
-- Classification: CAMELYON16, CAMELYON17, KGH, PANDA, and BRACS.
-- Survival: TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, and TCGA-UCEC.
-- Architecture ablation: ADP raw-RGB patches and PANDA dense ViT.
-- Design ablations: fixed projection, gate range, gate gradients, gate
-  factorization, gate initialization, and patch encoder.
-- Methods: NA, XSA, Diff, and Gated SRP.
+<p align="center">
+  <img src="assets/gatedsrp_overview.svg" width="920" alt="Gated SRP overview">
+</p>
 
-The repository is organized around a short quick start, detailed docs in
-`docs/`, runnable manifests in `configs/`, and reference tables in
-`results/`.
+## Why This Exists
+
+Whole-slide images are not natural images cut into independent tokens. Neighboring
+patches often contain the same tissue type, stain, texture, and cellular
+composition. Standard self-attention can repeatedly mix this local common signal
+into token representations, which can weaken subtle diagnostic or prognostic
+deviations.
+
+Gated SRP keeps the base attention layer intact and adds one geometric correction:
+
+```text
+z_i = y_i - beta_i * <y_i, r_hat_i> * r_hat_i
+```
+
+`r_hat_i` is the normalized local neighborhood direction and `beta_i` is a
+small learned signed gate. At initialization, `beta_i = 0`, so the module starts
+as the original attention layer.
+
+## What You Can Do With This Repo
+
+| Goal | Start here |
+|---|---|
+| Understand the mechanism | [docs/METHOD.md](docs/METHOD.md) |
+| Add Gated SRP to another transformer | [docs/INTEGRATION.md](docs/INTEGRATION.md) |
+| Reproduce the reported tables | [docs/REPRODUCING.md](docs/REPRODUCING.md) |
+| Prepare datasets and labels | [docs/DATASETS.md](docs/DATASETS.md) |
+| Extract or validate H5 patch embeddings | [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) |
+| Inspect reference numbers | [docs/RESULTS.md](docs/RESULTS.md) |
+
+## Result Snapshot
+
+<p align="center">
+  <img src="assets/result_snapshot.svg" width="920" alt="Gated SRP result snapshot">
+</p>
+
+Reference tables are bundled in [results/](results). Exact run commands are
+stored in [configs/](configs), so every reported number has a manifest row.
 
 ## Quick Start
 
-Choose one environment path.
+Choose one environment path. PyTorch is installed explicitly so you can choose
+the CUDA or CPU wheel that matches your machine.
 
-Conda:
+### Conda
 
 ```bash
 conda env create -f environment.yml
@@ -28,7 +67,7 @@ python -m pip install torch torchvision --index-url https://download.pytorch.org
 python -m pip install -r requirements.txt
 ```
 
-venv + pip:
+### venv + pip
 
 ```bash
 python3.10 -m venv .venv
@@ -38,7 +77,7 @@ python -m pip install torch torchvision --index-url https://download.pytorch.org
 python -m pip install -r requirements.txt
 ```
 
-uv:
+### uv
 
 ```bash
 uv sync --python 3.10
@@ -47,29 +86,55 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 
 For CPU-only smoke tests, install the CPU PyTorch wheel instead.
 
-Prepare datasets and frozen H5 embeddings as described in:
+## First Smoke Test
 
-- [docs/DATASETS.md](docs/DATASETS.md)
-- [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md)
-
-Then set paths:
+Prepare datasets and frozen H5 embeddings as described in
+[docs/DATASETS.md](docs/DATASETS.md) and [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md),
+then set local paths:
 
 ```bash
 source configs/paths.example.env
 ```
 
-Run a smoke command:
+Preview one command without launching training:
 
 ```bash
 python scripts/run_manifest.py configs/paper_classification.tsv \
   --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
 ```
 
-Run the lightweight unit tests:
+Run the lightweight tests:
 
 ```bash
 python -m pytest tests -q
 ```
+
+## Use Gated SRP in Your Own Model
+
+For a TransMIL-style WSI aggregator:
+
+```python
+from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
+
+model = NystromSRPAggregator(
+    in_dim=1536,
+    embed_dim=384,
+    depth=4,
+    num_heads=6,
+    num_classes=2,
+    beta_patch_mode="signed_gated",
+    srp_mode="post_agg_signed_gated",
+    delta_scale=1.0,
+    gate_hidden_dim=16,
+)
+```
+
+For a dense ViT-style grid attention block, use
+`src.srp_patch_attention.PatchSRPAttention`. See
+[docs/INTEGRATION.md](docs/INTEGRATION.md) for the required neighbor graph,
+`h_local` signal, and invariants for safe integration.
+
+## Reproduce the Tables
 
 Run the full manifests:
 
@@ -87,22 +152,21 @@ Collect main-table rerun metrics:
 python scripts/collect_paper_results.py --strict
 ```
 
-## Repository Layout
+## Repository Map
 
 | Path | Purpose |
 |---|---|
-| `slide_level_srp/` | Gated SRP, Diff Transformer comparator, slide/TCGA trainers, and dataset adapters. |
+| `slide_level_srp/` | Gated SRP, Diff comparator, slide/TCGA trainers, and dataset adapters. |
 | `slide_level/` | Baseline TransMIL/XSA components reused by the SRP trainer. |
-| `patch_level_adp/` | ADP raw-RGB ViT training entry point for the architecture ablation. |
-| `slide_level_srp/train_panda.py` and `src/` | PANDA training entry point plus PANDA data/model helpers. |
-| `configs/` | Exact reported-run manifests and example path environment variables. |
-| `scripts/` | Manifest runner, H5 validator, AtlasPatch extraction template, and result collector. |
-| `results/` | Reference result tables for reproducing the manuscript numbers. |
-| `docs/` | Dataset, embedding, and reproduction details. |
+| `patch_level_adp/` | ADP raw-RGB ViT trainer for the architecture-choice ablation. |
+| `src/` | PANDA and ADP model/data helpers, full-softmax SRP attention, and comparators. |
+| `examples/` | Minimal standalone snippets for calling Gated SRP modules. |
+| `configs/` | Runnable manifests for main results and ablations. |
+| `scripts/` | Manifest runner, H5 validator, embedding extraction template, and result collector. |
+| `results/` | Reference result tables. |
+| `docs/` | Method, integration, dataset, embedding, reproduction, and result details. |
 
-## Reference Results
-
-Reference tables are bundled as TSV files:
+## Reference Tables
 
 - [classification_main_table.tsv](results/classification_main_table.tsv)
 - [tcga_survival_main_table.tsv](results/tcga_survival_main_table.tsv)
@@ -113,10 +177,6 @@ Reference tables are bundled as TSV files:
 - [ablation_gate_factorization.tsv](results/ablation_gate_factorization.tsv)
 - [ablation_gate_initialization.tsv](results/ablation_gate_initialization.tsv)
 - [ablation_patch_encoder.tsv](results/ablation_patch_encoder.tsv)
-
-The manifests use five global seeds (`42` to `46`) for every dataset-method pair.
-ADP uses its official Release1 train/validation/test split for every method;
-the seed controls model initialization and training randomness.
 
 ## Citation
 

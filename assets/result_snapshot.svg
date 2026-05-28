@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="310" viewBox="0 0 1120 310" role="img" aria-labelledby="title desc">
+  <title id="title">Gated SRP result snapshot</title>
+  <desc id="desc">Summary of reported Gated SRP outcomes: best survival mean C-index on five of five TCGA cohorts, improved twelve of sixteen classification metrics, best AUC on three of five classification datasets, and small parameter overhead.</desc>
+  <defs>
+    <linearGradient id="card" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f4f8fa"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #ffffff; }
+      .card { fill: url(#card); stroke: #d8e3e8; stroke-width: 1.4; rx: 16; }
+      .title { font: 700 25px Arial, sans-serif; fill: #153243; }
+      .num { font: 700 44px Arial, sans-serif; fill: #28536b; }
+      .label { font: 700 17px Arial, sans-serif; fill: #153243; }
+      .small { font: 14px Arial, sans-serif; fill: #435963; }
+      .axis { stroke: #cfdde4; stroke-width: 1; }
+      .bar1 { fill: #2e7d5b; }
+      .bar2 { fill: #6b9ac4; }
+      .bar3 { fill: #d69545; }
+      .bar4 { fill: #8e6bbd; }
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="310"/>
+  <text x="38" y="52" class="title">Reported result snapshot</text>
+  <text x="38" y="78" class="small">Mean values are stored in results/*.tsv and reproduced through configs/*.tsv manifests.</text>
+
+  <rect class="card" x="38" y="108" width="245" height="150"/>
+  <text x="64" y="154" class="num">5/5</text>
+  <text x="64" y="187" class="label">TCGA survival cohorts</text>
+  <text x="64" y="213" class="small">Best mean case-level C-index</text>
+  <rect class="bar1" x="64" y="230" width="188" height="10" rx="5"/>
+
+  <rect class="card" x="313" y="108" width="245" height="150"/>
+  <text x="339" y="154" class="num">12/16</text>
+  <text x="339" y="187" class="label">Classification metrics</text>
+  <text x="339" y="213" class="small">Improved over NA baseline</text>
+  <rect class="axis" x="339" y="230" width="188" height="10" rx="5"/>
+  <rect class="bar2" x="339" y="230" width="141" height="10" rx="5"/>
+
+  <rect class="card" x="588" y="108" width="245" height="150"/>
+  <text x="614" y="154" class="num">3/5</text>
+  <text x="614" y="187" class="label">Classification AUCs</text>
+  <text x="614" y="213" class="small">Best mean AUC across methods</text>
+  <rect class="axis" x="614" y="230" width="188" height="10" rx="5"/>
+  <rect class="bar3" x="614" y="230" width="113" height="10" rx="5"/>
+
+  <rect class="card" x="863" y="108" width="219" height="150"/>
+  <text x="889" y="154" class="num">+0.004%</text>
+  <text x="889" y="187" class="label">to +0.034% params</text>
+  <text x="889" y="213" class="small">Dataset-dependent overhead</text>
+  <rect class="bar4" x="889" y="230" width="158" height="10" rx="5"/>
+</svg>

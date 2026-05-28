@@ -1,5 +1,17 @@
 # Reproducing the Reported Runs
 
+The manifests in `configs/` are the source of truth for commands. Start with a
+single dry-run row, confirm paths and hardware, then launch the full manifest
+for the table you want.
+
+| Target | Manifest | Output root |
+|---|---|---|
+| Main WSI classification | `configs/paper_classification.tsv` | `GATEDSRP_CLASSIFICATION_OUT` |
+| Main TCGA survival | `configs/paper_tcga_survival.tsv` | `GATEDSRP_TCGA_SURVIVAL_OUT` |
+| ADP/PANDA architecture ablation | `configs/paper_architecture_ablation.tsv` | `GATEDSRP_ARCHITECTURE_OUT` |
+| Gate/design ablations | `configs/paper_design_ablation.tsv` | `GATEDSRP_ABLATION_OUT` |
+| Patch-encoder ablation | `configs/paper_patch_encoder_ablation.tsv` | `GATEDSRP_PATCH_ENCODER_OUT` |
+
 ## 1. Environment
 
 Choose one setup path. PyTorch is installed explicitly so you can select the
@@ -53,6 +65,9 @@ python scripts/validate_h5_embeddings.py --root "$PANDA_FEATURE_ROOT" --feature-
 ```
 
 Repeat for the other feature roots.
+
+At minimum, a WSI run needs one H5 per slide with `/coords` and the configured
+feature key. Gated SRP builds the local neighbor graph from the coordinates.
 
 ## 3. Run Classification
 
