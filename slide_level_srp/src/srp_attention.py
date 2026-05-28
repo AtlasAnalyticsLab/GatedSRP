@@ -7,15 +7,15 @@ patch's 3x3 neighborhood). Three projection modes are supported, all
 toggled by `srp_mode`:
 
     "post_agg"        z_i = y_i - beta * (y_i · r̂_i) r̂_i
-                      (proposal §2.4; applied after Nyström aggregation)
+                      (reported configuration; applied after Nyström aggregation)
 
     "pre_v"           v'_j = v_j - β̃ * (v_j · r̂_j) r̂_j, aggregate with v'
-                      (proposal §2.5; projects values before mixing)
+                      (reported configuration; projects values before mixing)
 
     "post_agg_gated"  β_i = β_base · g(h^morph_i), then apply post_agg
                       with the per-token β_i. h^morph is precomputed
                       from frozen raw UNI features, passed in as `h_morph`
-                      (proposal §6).
+                      (by design).
 
     "pre_q_signed_gated" / "pre_k_signed_gated" / "pre_v_signed_gated"
                       learned signed-gated SRP applied to Q, K, or V before
@@ -23,13 +23,13 @@ toggled by `srp_mode`:
                       pre-attention placement ablations inspired by the
                       gated-attention paper's Q/K/V gate locations.
 
-Three structural rules hold in every mode (proposal §12.2):
+Three structural rules hold in every mode (by design):
   1. CLS (position 0) receives NO direct SRP projection. Its value is
      left exactly as unmodified attention produced it. (It may still
      inherit SRP's effect indirectly via modified patch values in pre_v.)
   2. Pad-duplicate rows (positions 1+N .. H*W) receive NO SRP projection.
      They are artifacts of the square-pad step for PPEG (aggregator.py
-     §4.1) and have no real coordinates.
+     by design) and have no real coordinates.
   3. Fully-isolated real patches (|N(i)|=0) pass through as z_i = y_i by
      construction — F.normalize of a zero vector yields zero, so the
      projection term is exactly zero.
@@ -66,7 +66,7 @@ from .rcd_modules import IdentitySafeRCDRecomposer, LearnedLocalContextDirection
 #   "learn" -> β learnable nn.Parameter, init from beta_init
 #   "fixed" -> β frozen at beta_init (arbitrary value), buffer
 _BETA_MODES = ("zero", "one", "learn", "fixed")
-# Phase-A signed-gate mode (LEARNED_GATE_SRP_PROPOSAL.md §2). Treated
+# signed-gate mode (the signed-gate design). Treated
 # as a sentinel: when beta_patch_mode == "signed_gated", the per-head
 # scalar `beta_patch` parameter is replaced by a per-(token, head)
 # learned tensor produced by a TokenHeadGate.
@@ -150,7 +150,7 @@ def gather_neighbors(
     reduction. The mask itself is returned to the caller elsewhere.
 
     Rationale for returning raw stacked neighbors rather than the mean:
-    h^V diagnostic (§8.2.B) requires per-neighbor cosines, not just the
+    h^V diagnostic (by design) requires per-neighbor cosines, not just the
     mean direction.
     """
     B, H, N, D = v_patch.shape
@@ -357,7 +357,7 @@ class NystromSRPAttention(nn.Module):
         gate_activation_temperature: float = 1.0,
         gate_factorization: str = "full",
         gate_count_features: str = "legacy",
-        # Post-Phase-A refinement methods.  These are consumed only by
+        # Post-signed-gate refinement methods.  These are consumed only by
         # srp_mode in {"post_agg_rcd", "post_agg_rcd_learned_r"} and are
         # constructed as separate modules so original SRP / signed-gate
         # paths remain untouched.
@@ -367,13 +367,13 @@ class NystromSRPAttention(nn.Module):
         # When False, gate diagnostic inputs (head_diag includes
         # cos_yr / |cos_yr| / log_norm_y, all derived from live y) are
         # NOT detached before the gate forward. Default True is the
-        # proposal §6.3 detached regime; setting False enables the
+        # reported detached regime; setting False enables the
         # "live" regime that empirically beat detached on ADP by
-        # +0.98 pp paired (§6.3.1).
+        # +0.98 pp paired (by design).
         detach_gate_inputs: bool = True,
     ) -> None:
         super().__init__()
-        # Phase-A.9 fourth-review fix F4: constructor-arg validation must
+        # Validation: constructor-arg validation must
         # raise ValueError so it survives `python -O` (asserts are
         # stripped). These guard against silent wrong-config bugs.
         if dim % num_heads != 0:
@@ -444,7 +444,7 @@ class NystromSRPAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         # beta_patch: per-head scalar, shape (num_heads,).
-        # No beta_cls — CLS is left untouched per proposal §2.4.
+        # No beta_cls — CLS is left untouched by design
         if beta_patch_mode == "learn":
             self.beta_patch = nn.Parameter(
                 torch.full((num_heads,), float(beta_init))
@@ -462,8 +462,8 @@ class NystromSRPAttention(nn.Module):
         else:
             # "zero" → 0.0, "one" → 1.0, "fixed" → beta_init.
             # "zero"/"one" are legacy shorthand kept for backward compat with
-            # the Phase-1 ablations (baseline, srp_patch_hard). "fixed" is
-            # the general form used by the Phase-1.5+ β-grid ablations.
+            # the fixed-beta ablations (baseline, srp_patch_hard). "fixed" is
+            # the general form used by the fixed-beta β-grid ablations.
             if beta_patch_mode == "zero":
                 fixed = 0.0
             elif beta_patch_mode == "one":
@@ -501,7 +501,7 @@ class NystromSRPAttention(nn.Module):
                     # CAM17 token-level features (3): h_local,
                     # neighbour_count/8, log(1+neighbour_count). We omit
                     # `local feature variance` from the PANDA gate
-                    # because Stage-3 doesn't precompute it and the
+                    # because slide-level SRP doesn't precompute it and the
                     # extra channel is not yet validated as informative.
                     num_token_features=_gate_num_token_features(
                         self.gate_count_features,
@@ -688,7 +688,7 @@ class NystromSRPAttention(nn.Module):
         h_morph     slide-intrinsic gate signal (frozen raw UNI features);
                     required only when srp_mode == "post_agg_gated"
         h_local     per-token cosine-homogeneity input to the learned
-                    signed gate (proposal §6.2); required only when
+                    signed gate (by design); required only when
                     srp_mode == "post_agg_signed_gated". On CAM17 this
                     can be sourced from the existing h_morph if no
                     distinct h_local is precomputed (the two are
@@ -701,7 +701,7 @@ class NystromSRPAttention(nn.Module):
         self._last_rcd_stats = None
         B, L, C = x.shape
         H, D = self.num_heads, self.head_dim
-        # Phase-A.9 review fix F9: runtime input-contract checks now
+        # Validation: runtime input-contract checks now
         # raise ValueError so they survive `python -O`. (The
         # constructor invariants in __init__ remain plain `assert`
         # because they catch programmer errors at instantiation, not
@@ -946,7 +946,7 @@ class NystromSRPAttention(nn.Module):
                 beta_bh = self.beta_patch.to(dtype=y.dtype, device=y.device).view(1, H, 1, 1)
                 z_patch = y_patch - beta_bh * dot_yr * r_hat_det
             elif self.srp_mode == "post_agg_gated":
-                # Phase-A.9 fourth-review fix F4: required-input checks
+                # Validation: required-input checks
                 # raise ValueError so they survive `python -O`. These are
                 # data-contract violations that should always be visible.
                 # post_agg_gated: β_i = β_base · clamp(h_morph_i, 0, 1).
@@ -967,12 +967,12 @@ class NystromSRPAttention(nn.Module):
                 z_patch = y_patch - beta_eff * dot_yr * r_hat_det
             elif self.srp_mode in _SRP_SIGNED_GATE_MODES:
                 # Signed-gated SRP: per-(token, head) β_eff from a learned
-                # TokenHeadGate (proposal §2).  The learned-r variant reuses
+                # TokenHeadGate (by design).  The learned-r variant reuses
                 # this exact intervention formula after replacing the fixed
                 # neighborhood r_hat above with Method 2.4's local scorer.
                 # Identity at init holds because β_eff = 0 under zero-init.
                 if self.gate_active:
-                    # Phase-A.9 fourth-review fix F4: required-input
+                    # Validation: required-input
                     # contract for the live signed-gated forward path —
                     # raise ValueError so it survives `python -O`.
                     if h_local is None:
@@ -1002,10 +1002,10 @@ class NystromSRPAttention(nn.Module):
                         [cos_yr, cos_yr.abs(), torch.log1p(y_norms)],
                         dim=-1,
                     )                                                     # (B, H, N, 3)
-                    # Proposal §6.3 detach convention: by default, gate
+                    # The default detach convention: by default, gate
                     # diagnostic inputs are stop-grad'd. self.detach_gate_inputs
                     # toggles this — see __init__ for rationale; the +0.98
-                    # pp ADP detach finding (§6.3.1) is what motivates the
+                    # pp ADP detach finding (by design) is what motivates the
                     # flag.
                     if self.detach_gate_inputs:
                         token_diag = token_diag.detach()
@@ -1062,7 +1062,7 @@ class NystromSRPAttention(nn.Module):
             # SRP correction before Nyström attention runs.
             z_patch = y_patch
             # Still compute V-space r̂ for diagnostics (placement-comparison
-            # signatures per §8.2.E want cos(y, r) under pre-attention
+            # signatures in this setting want cos(y, r) under pre-attention
             # placements too).
             neighbor_v_det = gather_neighbors(
                 v_patch_pre.detach(), neighbor_index, neighbor_mask,
@@ -1076,7 +1076,7 @@ class NystromSRPAttention(nn.Module):
             neighbor_v_for_diag = neighbor_v_det
 
         # Clone-and-update: patch rows get z_patch; CLS and pad-dupe rows
-        # pass through from y unchanged (proposal §12.2 rules 1 & 2).
+        # pass through from y unchanged (diagnostic rules 1 & 2).
         z = y.clone()
         z[:, :, 1 : 1 + N_real, :] = z_patch
 
@@ -1126,8 +1126,8 @@ class NystromSRPAttention(nn.Module):
         N_real: int,
     ) -> dict:
         """
-        Captures (a) stage-2-equivalent diagnostics for strict continuity,
-        (b) SRP-specific diagnostics (proposal §8.2.A, B, D).
+            Captures (a) baseline-compatible diagnostics for strict continuity
+            and (b) SRP-specific diagnostics (B, D).
         All output tensors are detached for memory safety.
         """
         B, H, L, D = y.shape
@@ -1136,22 +1136,22 @@ class NystromSRPAttention(nn.Module):
         # --- Slice by role --------------------------------------------
         # CLS rows: positions 0..n_cls-1. Patch rows: positions n_cls..n_cls+N_real-1.
         # Pad-duplicate rows (positions n_cls+N_real..L-1) are intentionally
-        # EXCLUDED from per-slide diagnostic means (proposal §12.2 rule 4).
+        # EXCLUDED from per-slide diagnostic means (diagnostic rule 4).
         y_cls = y[:, :, :n_cls, :]
         z_cls = z[:, :, :n_cls, :]
         v_cls = v[:, :, :n_cls, :]
         y_patch = y[:, :, n_cls : n_cls + N_real, :]
         z_patch = z[:, :, n_cls : n_cls + N_real, :]
 
-        # --- cos(y, v) and cos(z, v) per role (stage-2 continuity) -----
-        # Patch-space is the SRP-relevant slice. CLS-space is kept for
-        # direct comparability with stage-2 RESULTS.md.
+            # --- cos(y, v) and cos(z, v) per role (baseline continuity) -----
+            # Patch-space is the SRP-relevant slice. CLS-space is kept for
+            # direct comparability with baseline diagnostics.
         cos_yv_cls_pre = F.cosine_similarity(y_cls, v_cls, dim=-1).detach()        # (B, H, n_cls)
         cos_yv_cls_post = F.cosine_similarity(z_cls, v_cls, dim=-1).detach()
         cos_yv_patch_pre = F.cosine_similarity(y_patch, v_patch_pre, dim=-1).detach()
         cos_yv_patch_post = F.cosine_similarity(z_patch, v_patch_pre, dim=-1).detach()
 
-        # --- cos(y, r) and cos(z, r) at patch rows (proposal §8.2.A) ---
+        # --- cos(y, r) and cos(z, r) at patch rows (by design) ---
         cos_yr_patch_pre = F.cosine_similarity(y_patch, r_hat, dim=-1).detach()
         cos_zr_patch_post = F.cosine_similarity(z_patch, r_hat, dim=-1).detach()
 
@@ -1171,7 +1171,7 @@ class NystromSRPAttention(nn.Module):
             cos_vr_patch_post = None
             rho_patch = None
 
-        # --- h^V: V-space neighborhood coherence (proposal §8.2.B) -----
+        # --- h^V: V-space neighborhood coherence (by design) -----
         # h^V_i = (1/|N(i)|) Σ_{j in N(i)} cos(v_i.detach(), v_j.detach()).
         # Exact form requires per-neighbor cosines, not cos(v_i, mean(v_j)).
         # We have neighbor_v_det: (B, H, N_real, 8, D) already detached.
@@ -1190,7 +1190,7 @@ class NystromSRPAttention(nn.Module):
         # --- h^morph (if provided; single tensor shared across heads) ---
         h_morph_patch = h_morph.detach() if h_morph is not None else None    # (B, N) or None
 
-        # --- legacy norms (stage-2 §8.1 continuity) -------------------
+            # --- legacy norms (baseline diagnostic continuity) ----------------
         y_norm = y.norm(dim=-1).detach()                                     # (B, H, L)
         v_norm = v.norm(dim=-1).detach()                                     # (B, H, L)
         z_norm = z.norm(dim=-1).detach()                                     # (B, H, L)
@@ -1228,7 +1228,7 @@ class NystromSRPAttention(nn.Module):
             srp_correction_norm_patch / (y_patch.norm(dim=-1) + 1e-8)
         ).detach()
 
-        # --- §8.2.E placement signature: cos(y_cls, r̄_cls) per (B, H) ---
+        # --- diagnostic placement signature: cos(y_cls, r̄_cls) per (B, H) ---
         # r̄_cls = (1/N_real) Σ_j r_j -- the mean neighborhood direction
         # averaged over ALL real patches. NOT the unit-normalized
         # r̂_bar, since direction-magnitude mixing matters for the
@@ -1236,12 +1236,12 @@ class NystromSRPAttention(nn.Module):
         # has stripped the redundancy before aggregation, cos(y_cls, r̄)
         # should be small; if post_agg hasn't touched y_cls, cos may be
         # larger. Whether this is a true asymmetry is exactly what
-        # §8.2.E tests.
+        # this diagnostic tests.
         r_bar = r.mean(dim=2)                                    # (B, H, D)
         y_cls_single = y[:, :, 0, :]                             # (B, H, D)
         cos_y_cls_rbar = F.cosine_similarity(y_cls_single, r_bar, dim=-1).detach()
 
-        # --- §8.2.D3 attention-weighted magnitude retention (pre_v only) ---
+        # --- diagnostic attention-weighted magnitude retention (pre_v only) ---
         # bar_rho_cls = Σ_j a_cls,j · ||v'_j|| / Σ_j a_cls,j · ||v_j||.
         # In Nyström, the effective attention from CLS to patch j is
         # P_cls,j = Σ_m F[0, m] · (A_inv · B)[m, j]. We reconstruct it
@@ -1265,8 +1265,8 @@ class NystromSRPAttention(nn.Module):
             bar_rho_cls = None
 
         return {
-            # Stage-2-compatible role-split suite (same keys as stage-2's
-            # last_stats, modulo cls vs patch role splitting which the
+                # Baseline-compatible role-split suite (same keys as the baseline
+                # last_stats, modulo cls vs patch role splitting which the
             # downstream diagnostics accumulator does).
             "cos_yv_cls_pre":              cos_yv_cls_pre,           # (B, H, n_cls)
             "cos_yv_cls_post":             cos_yv_cls_post,          # (B, H, n_cls)
@@ -1281,7 +1281,7 @@ class NystromSRPAttention(nn.Module):
             "srp_correction_frac_patch":    srp_correction_frac_patch, # (B, H, N)
             "num_cls_tokens":              n_cls,
             "N_real":                      N_real,
-            # SRP-specific (§8.2).
+            # SRP-specific (by design).
             "cos_yr_patch_pre":            cos_yr_patch_pre,         # (B, H, N)
             "cos_zr_patch_post":           cos_zr_patch_post,        # (B, H, N)
             "h_V_patch":                   h_V_patch,                 # (B, H, N)
@@ -1291,13 +1291,13 @@ class NystromSRPAttention(nn.Module):
             "rho_patch":                   rho_patch,                 # (B, H, N) or None
             # Slide-intrinsic gate signal (when applicable).
             "h_morph_patch":               h_morph_patch,             # (B, N) or None
-            # §8.2.E placement signature (cheap, always computed).
+            # diagnostic placement signature (cheap, always computed).
             "cos_y_cls_rbar":              cos_y_cls_rbar,           # (B, H)
-            # §8.2.D3 pre-V attention-weighted retention (pre_v only).
+            # diagnostic pre-V attention-weighted retention (pre_v only).
             "bar_rho_cls":                 bar_rho_cls,               # (B, H) or None
             # Raw CLS vectors pre- and post-SRP, used by unit tests to
             # verify the internal invariant z_cls == y_cls within a
-            # single forward (proposal §12.7). Detached to avoid
+            # single forward (by design). Detached to avoid
             # holding graph references; downstream StatsAccumulator
             # ignores them (not registered in the accumulator's key
             # roster in srp_diagnostics.py).

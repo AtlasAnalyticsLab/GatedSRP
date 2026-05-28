@@ -1,11 +1,11 @@
 """
 PandaSlideViT — set-style transformer for PANDA slide-level ISUP grading.
 
-Stage-4 design (slide_level_panda/DESIGN.md §3.6):
+PANDA slide-level design:
   Input  (B, N_max, 1536)  UNI-v2 features (variable real N, padded with mask)
   ↓ Linear(1536, 384)         input projection
   ↓ prepend [CLS]              (B, 1+N_max, 384)
-  # NO positional embedding — set-style, see DESIGN §3.5
+  # NO positional embedding — set-style, see reported configuration
   ↓ depth=4 PandaBlocks (full softmax attention with attn_mask + MLP)
   ↓ LayerNorm
   ↓ read CLS at position 0
@@ -15,13 +15,12 @@ Why a new attention class instead of reusing src/xsa_attention.XSAAttention?
   XSAAttention.forward(self, x) does NOT accept attn_mask — only the
   diagonal-mask flag. Variable-length padding requires per-position
   masking before softmax, which the existing module doesn't support.
-  Modifying XSAAttention to accept attn_mask would break Stage-1
-  reproducibility unless gated; cleaner to write a sibling class here.
+  Modifying XSAAttention to accept attn_mask would risk changing the baseline
+  path; writing a sibling class keeps the PANDA implementation isolated.
 
 The XSA / SRP math (alpha- / beta-scaled post-attention projection) IS
-ported in below for the SRP arm of Round 1 (panda_srp_beta2_fixed). For
-Round 1's stress test we keep the simpler `panda_baseline` path
-(alpha=0, no SRP) which is structurally equivalent to standard attention.
+ported in below for PANDA SRP variants. The `panda_baseline` path uses
+alpha=0 and no SRP, making it structurally equivalent to standard attention.
 """
 
 from __future__ import annotations
@@ -30,10 +29,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# 8-neighbour gather + masked-mean utilities shared with Stage-3 SRP. The
+# 8-neighbour gather + masked-mean utilities shared with slide-level SRP SRP. The
 # functions accept (B, H, N, D) value tensors and (B, N, 8) index/mask
 # tensors; nothing PANDA-specific. Cross-validated bit-identical to
-# Stage-3's `build_neighbor_index` graph (see src/data_panda.py).
+# slide-level SRP's `build_neighbor_index` graph (see src/data_panda.py).
 from slide_level_srp.src.srp_attention import (        # noqa: E402
     _GATE_COUNT_FEATURES,
     gather_neighbors as _gather_neighbors,
@@ -48,7 +47,7 @@ from slide_level_srp.src.rcd_modules import (          # noqa: E402
     reset_rcd_identity_modules,
 )
 
-# Signed learned-gate SRP (LEARNED_GATE_SRP_PROPOSAL.md §2). Imported
+# Signed learned-gate SRP (the signed-gate design). Imported
 # lazily-style at top so any signed_gated mode failure surfaces at
 # construction, not at first forward.
 from slide_level_srp.src.gate_signed import TokenHeadGate, collect_gate_module_ids  # noqa: E402
@@ -105,27 +104,26 @@ class Mlp(nn.Module):
 class PandaAttention(nn.Module):
     """
     Full softmax attention over (1 + N_max) tokens with a variable-length
-    boolean mask. Supports three Round-1 ablation configurations:
+    boolean mask. Supports the baseline, XSA, and SRP configurations:
 
       mode="baseline"      α=0 (identity post-projection)
       mode="xsa_all_hard"  α_cls=α_patch=1 (hard XSA on every token)
-      mode="srp_beta2"     SRP at scalar β against r̂ — the projection
+      mode="srp_beta2"     SRP at scalar β against r̂; the projection
                            target r̂ is selected by `r_target`:
 
                              "slide_mean" : r̂ = unit(mean over real-patch v)
-                                             — slide-wide mean (Round 1).
+                                             — slide-wide mean.
                              "knn8"       : r̂_i = unit(mean of v over the
                                              8 spatial neighbours of i,
-                                             from H5 /coords) — Round 2,
-                                             mirrors Stage-3 / Phase-2
+                                             from H5 /coords), mirroring
+                                             slide-level SRP
                                              grid-local SRP. Requires
                                              `neighbor_index` and
                                              `neighbor_mask` in forward().
 
-    For the stress test we instantiate `mode="baseline"` because it
-    exercises the same attention/MLP/residual structure that any other
-    mode would; the post-projection step adds < 1 % to wall time and
-    < 1 % to peak memory.
+    Baseline mode exercises the same attention/MLP/residual structure that
+    the projection modes use, while the post-projection step adds < 1 % to
+    wall time and < 1 % to peak memory.
     """
 
     def __init__(
@@ -139,7 +137,7 @@ class PandaAttention(nn.Module):
         beta: float = 2.0,
         r_target: str = "slide_mean",      # "slide_mean" | "knn8"
         num_cls_tokens: int = 1,
-        # Signed-gate (proposal §2.1, §2.2) — consulted when mode is one of
+        # Signed-gate (by design) — consulted when mode is one of
         # _SIGNED_GATE_MODES.  The learned-r variant keeps the same gate
         # intervention and changes only the local direction estimator.
         delta_scale: float = 2.0,
@@ -149,9 +147,9 @@ class PandaAttention(nn.Module):
         # log_norm_y_mean, head_diag includes cos_yr / log_norm_y_h)
         # are NOT detached before the gate forward — gradients flow
         # back through the y-derived diagnostics into y. This is the
-        # "live" regime; default True is the proposal §6.3 detached
-        # regime. See §6.3.1 for the +0.98 pp ADP detach finding that
-        # motivates this toggle.
+        # "live" regime; default True is the detached regime used by the
+        # released configuration. The ADP architecture ablation motivates
+        # keeping this toggle explicit.
         detach_gate_inputs: bool = True,
         gate_output_init: str = "zero",
         gate_output_init_scale: float = 1.0,
@@ -205,7 +203,7 @@ class PandaAttention(nn.Module):
         # Signed-gate state. The gate is instantiated only when
         #   (a) mode is the signed-gate variant, AND
         #   (b) gate_active is True.
-        # gate_active=False is the dead-path opt-out (proposal §2.4):
+        # gate_active=False is the dead-path opt-out (by design):
         # for the LAST attention block, the SRP correction has zero
         # downstream consumer (CLS-only readout, post-attention CLS
         # pass-through), so gate parameters in the last block would
@@ -301,7 +299,7 @@ class PandaAttention(nn.Module):
         # this dict to log gate stats. Cleared at the start of every
         # forward to avoid leaking across calls.
         self._last_gate_stats: dict | None = None
-        # Training-time cache for Phase11 gate containment.  The stats cache
+        # Training-time cache for gate-containment gate containment.  The stats cache
         # above is detached on purpose for logging; this separate tensor stays
         # attached to the gate computation so `slide_level_srp/train_panda.py` can add
         # mean(beta_eff^2) to the loss without accidentally regularizing a
@@ -322,7 +320,7 @@ class PandaAttention(nn.Module):
         """
         Apply the signed-gated SRP formula to one patch-token stream.
 
-        Phase18 uses this for pre-Q/pre-K:
+        global-seed uses this for pre-Q/pre-K:
 
             Q_patch' = Q_patch - beta_eff * <Q_patch, r_hat^Q> * r_hat^Q
             K_patch' = K_patch - beta_eff * <K_patch, r_hat^K> * r_hat^K
@@ -448,7 +446,7 @@ class PandaAttention(nn.Module):
         q, k, v = qkv.unbind(0)                           # (B, H, L, D)
 
         if self.mode in ("srp_signed_gated_pre_q", "srp_signed_gated_pre_k"):
-            # Phase18 pre-attention arms edit one patch stream before QK.
+            # global-seed pre-attention arms edit one patch stream before QK.
             # CLS rows are preserved.  Pre-Q has no direct final-block CLS
             # path; pre-K does, because the final CLS query attends to edited
             # patch keys in the same block.
@@ -523,11 +521,11 @@ class PandaAttention(nn.Module):
 
             else:  # self.r_target == "knn8"
                 # Per-patch r̂ from the 8 spatial neighbours' v vectors.
-                # Mirrors Stage-3 / Phase-2 grid-local SRP. Requires the
+                # Mirrors slide-level SRP grid-local SRP. Requires the
                 # forward to be called with neighbor_index / neighbor_mask
                 # tensors (one row per patch, shape (B, N_max, 8)). r̂ is
                 # detached via gather_neighbors taking v_patch.detach().
-                # Phase-A.9 second-review fix F7: runtime input contract
+                # Validation: runtime input contract
                 # raises ValueError so it survives `python -O`.
                 if neighbor_index is None or neighbor_mask is None:
                     raise ValueError(
@@ -630,20 +628,20 @@ class PandaAttention(nn.Module):
                 z[:, :, n_cls:, :] = z_patch
         elif self.mode in ("srp_signed_gated_pre_q", "srp_signed_gated_pre_k"):
             # Pre-attention placement already applied the signed projection.
-            # Do not add a second post-Y correction; Phase18 isolates the
-            # placement change against the current post-attention design.
+                # Do not add a second post-Y correction; paired seeds isolate
+                # the placement change against the default post-attention path.
             z = y
         elif self.mode in _SIGNED_GATE_MODES:
             # Signed learned-gate SRP: same r̂ machinery as srp_beta2 +
             # knn8, but the per-(token, head) gate replaces scalar β.
             # srp_signed_gated_learned_r keeps this exact formula and
             # learns r_hat through Method 2.4's local-neighbour scorer.
-            # Identity at init by construction (proposal §2.3): the
+            # Identity at init by construction (by design): the
             # gate's output-path zero-init makes raw_logit = 0, so
             # β_eff = δ · tanh(0) = 0 and z_patch = y_patch — exactly
             # the un-projected baseline. The model learns where to
             # apply non-zero β over the course of training.
-            # Phase-A.9 second-review fix F7: ValueError instead of assert.
+            # Validation: ValueError instead of assert.
             if neighbor_index is None or neighbor_mask is None:
                 raise ValueError(
                     f"{self.mode} requires neighbor_index and "
@@ -681,10 +679,10 @@ class PandaAttention(nn.Module):
             if self.gate_active:
                 # Build per-token diagnostics (token-level, shared across heads).
                 # 1. h_local: precomputed cosine homogeneity, shape (B, N).
-                #    Required input — not optional, since CAM17 Phase 0
+                #    Required input — not optional, since CAM17 the baseline run
                 #    confirmed h_local is the most predictive token-level
                 #    gate input.
-                # Phase-A.9 second-review fix F7: ValueError instead of assert.
+                # Validation: ValueError instead of assert.
                 if h_local is None:
                     raise ValueError(
                         f"{self.mode} with gate_active=True requires "
@@ -693,7 +691,7 @@ class PandaAttention(nn.Module):
                 # 2. neighbour_count / 8: a low-support patch has
                 #    unreliable r̂; the gate should learn to attenuate
                 #    projection there. _neighborhood_mean returns cnt
-                #    with shape (B, 1, N, 1) per the Stage-3 convention
+                #    with shape (B, 1, N, 1) per the slide-level SRP convention
                 #    — squeeze the head and last dims to (B, N) since
                 #    neighbour count is intrinsic to the patch, not
                 #    head-specific.
@@ -722,11 +720,10 @@ class PandaAttention(nn.Module):
                     [cos_yr, abs_cos_yr, log_norm_y_h], dim=-1,
                 )                                                         # (B, H, N, 3)
 
-                # Proposal §6.3 detach convention: by default, gate
+                # The default detach convention: by default, gate
                 # diagnostic inputs are stop-grad'd. detach_gate_inputs
-                # toggles this — see __init__ for rationale; the +0.98
-                # pp ADP detach finding (§6.3.1) is what motivates the
-                # toggle.
+                # toggles this; see __init__ for why the detached default is
+                # kept explicit.
                 if self.detach_gate_inputs:
                     token_diag = token_diag.detach()
                     head_diag = head_diag.detach()
@@ -749,7 +746,7 @@ class PandaAttention(nn.Module):
                         "neighbour_count": cnt_bn.detach(),
                     }
             else:
-                # Dead-path: gate excluded for this block (proposal §2.4).
+                # Dead-path: gate excluded for this block (by design).
                 # β_eff = 0 → z_patch = y_patch; equivalent to baseline
                 # for this block. Constructing a zero tensor keeps the
                 # downstream einsum shape uniform with the active path.
@@ -777,7 +774,7 @@ class PandaBlock(nn.Module):
                  num_cls_tokens: int = 1,
                  # Signed-gate options forwarded to PandaAttention.
                  # gate_active=False on the last block enforces the
-                 # dead-path rule (proposal §2.4).
+                 # dead-path rule (by design).
                  delta_scale: float = 2.0,
                  gate_active: bool = True,
                  gate_hidden_dim: int = 16,
@@ -838,7 +835,7 @@ class PandaBlock(nn.Module):
 
 class PandaSlideViT(nn.Module):
     """
-    Set-style ViT for PANDA. Default config matches DESIGN §3.6 / §4:
+    Set-style ViT for PANDA. Default config matches reported configuration:
       depth=4, dim=384, heads=6, mlp_ratio=4, drop_path=0.1,
       num_classes=6 (ISUP), no positional embedding.
     """
@@ -895,7 +892,7 @@ class PandaSlideViT(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # Linear depth schedule for drop-path.
         dpr = torch.linspace(0.0, drop_path_rate, depth).tolist() if depth > 0 else []
-        # Dead-path rule (proposal §2.4): post-aggregation and pre-Q patch
+        # Dead-path rule (by design): post-aggregation and pre-Q patch
         # gates have no final-block CLS consumer.  Pre-K is live in the final
         # block because the CLS query attends to edited patch keys.
         final_block_gate_live = mode == "srp_signed_gated_pre_k"
@@ -979,7 +976,7 @@ class PandaSlideViT(nn.Module):
                                               or mode='srp_rcd_learned_r'.
         Returns   (B, num_classes)
         """
-        # Phase-A.9 second-review fix F7: ValueError instead of assert.
+        # Validation: ValueError instead of assert.
         if self.r_target == "knn8" or self.mode in _SIGNED_GATE_MODES or self.mode == "srp_rcd_learned_r":
             if neighbor_index is None or neighbor_mask is None:
                 raise ValueError(

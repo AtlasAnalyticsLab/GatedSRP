@@ -1,46 +1,9 @@
-"""
-PANDA training entry point — single-run.
+"""PANDA single-run training entry point.
 
-Two architecture choices used in Round 1 (--arch):
-
-  vit4      — 4-layer set-style ViT, no positional embedding (DESIGN §3.6).
-              The "default" PANDA architecture. dim=384, heads=6, mlp_ratio=4.
-              Variable-length input handled via attn_mask. Carries the three
-              intervention modes (baseline / xsa_all_hard / srp_beta2).
-  transmil  — Slide-level TransMIL-style Nystrom/PPEG aggregator family
-              (depth=4, square-pad). This path is used for architecture-
-              consistent reruns: Standard SA, XSA, Differential Transformer,
-              and Gated SRP all share the same slide-level scaffold.
-
-A vit12 path is present in build_model() for future depth-ablation
-follow-ups but is NOT part of Round 1 by user direction (depth=4 was
-the design choice; extra depth is unlikely to help at PANDA's median
-501-token sequences).
-
-Intervention modes (--mode):
-  baseline       α=0 (identity post-projection)
-  xsa_all_hard   α_cls=α_patch=1
-  srp_beta2      SRP β=2 reflection against the slide-wide MEAN value vector
-  diff_transformer
-                  Differential attention comparator. Under vit4/vit12 this
-                  uses the PANDA set-style wrapper; under transmil it uses the
-                  same Nystrom/PPEG slide-level comparator as the other WSI
-                  datasets.
-  srp_signed_gated
-                  Post-attention signed Gated SRP. Under transmil this uses
-                  NystromSRPAggregator with knn8 neighbor tensors from the
-                  native-length PANDA loader.
-
-Metric: quadratic-weighted Cohen's kappa (Kaggle PANDA official).
-Loss: cross-entropy on 6 ISUP classes (DESIGN §4 keeps it standard;
-ordinal CE / CORN are stretch follow-ups).
-
-Outputs:
-  runs_panda/<run_name>/best.pt
-  runs_panda/<run_name>/predictions.csv  (slide_id, fold, n_real, y_true,
-                                          y_pred, kappa-relevant fields)
-  runs_panda/<run_name>/test_artifacts.npz  (full val_y / val_logits /
-                                              alpha or beta tensors / config)
+The main PANDA table uses the TransMIL-style `--arch transmil` path so NA,
+XSA, Diff, and Gated SRP share the same slide-level scaffold. The architecture
+ablation also exposes `--arch vit4`, a dense set-style ViT over native-length
+PANDA UNI-v2 slide features.
 """
 
 from __future__ import annotations
@@ -173,7 +136,7 @@ def compute_panda_metrics(y_true: np.ndarray, y_pred: np.ndarray,
                                                  bin_score))
     except Exception:
         out["binary_auc"] = float("nan")
-    # Phase18 tables use a common F1 / ACC / AUC surface across datasets.
+    # global-seed tables use a common F1 / ACC / AUC surface across datasets.
     # PANDA is multiclass ordinal, so use macro OvR AUC for the unified AUC
     # column while retaining Kaggle kappa and binary AUC as supplemental.
     try:
@@ -280,7 +243,7 @@ class PandaDiffTransformerClassifier(torch.nn.Module):
 def build_model(args) -> torch.nn.Module:
     # Default in_dim=1536 preserves UNI-v2.  Encoder-transfer ablations set
     # this explicitly so the model projection and the H5 feature validation
-    # share one audited dimensionality.
+    # share one reported dimensionality.
     in_dim = int(getattr(args, "in_dim", UNI_DIM))
     if args.mode == "diff_transformer" and args.arch in ("vit4", "vit12"):
         if args.arch not in ("vit4", "vit12"):
@@ -297,7 +260,7 @@ def build_model(args) -> torch.nn.Module:
         )
     if args.arch in ("vit4", "vit12"):
         depth = 4 if args.arch == "vit4" else 12
-        # Phase-A.9 second-review fix F9: programmatic callers that
+        # Validation: programmatic callers that
         # bypass parse_args() (tests, future launchers, notebooks) used
         # to silently get their `srp_r_target` coerced to "knn8" under
         # signed-gated mode. That hides experiment-config errors. Now
@@ -322,7 +285,7 @@ def build_model(args) -> torch.nn.Module:
             r_target=r_target_eff,
             # Signed-gate parameters; consumed only under signed-gate modes.
             # Default delta_scale=2.0
-            # matches LEARNED_GATE_SRP_PROPOSAL.md §2.1.
+            # matches the signed-gate design
             delta_scale=args.delta_scale,
             gate_hidden_dim=args.gate_hidden_dim,
             detach_gate_inputs=not args.no_detach_gate_inputs,
@@ -433,7 +396,7 @@ def gate_diagnostics(model, prefix: str = "gate") -> dict:
     most recently-cached `_last_gate_stats` from each. Returns a flat
     dict suitable for `wandb.log(...)`.
 
-    Stats computed per block (proposal §2.6):
+    Stats computed per block (by design):
       mean / std of beta_eff
       fraction of beta_eff in {neg, near_zero, projection, reflection}
       mean of cos(y, r_hat) — alignment of attention output with the
@@ -536,7 +499,7 @@ def collect_gate_beta_l2(model, device: torch.device) -> tuple[torch.Tensor, int
 def is_method_param(name: str, mode: str) -> bool:
     """Return True for PANDA XSA/SRP parameters controlled by the intervention.
 
-    Phase12 needs the same method/non-method split as the slide trainer.  For
+    two-stage needs the same method/non-method split as the slide trainer.  For
     signed-gated PANDA, the learned intervention surface is every parameter in
     each `*.gate.*` module; for legacy hard/scalar modes, it is the alpha/beta
     scalar surface.  Keeping this as a helper prevents the freeze mask and
@@ -574,7 +537,7 @@ def is_method_no_decay(name: str, mode: str) -> bool:
 
     Gate weights still receive normal decay; only gate biases are no-decay so
     zero/near-zero identity initialization is not mechanically pulled back by
-    AdamW after the gate starts moving.  This mirrors the existing Phase11
+    AdamW after the gate starts moving.  This mirrors the existing gate-containment
     grouping and the CAM16/CAM17/KGH slide trainer.
     """
     if mode in _SIGNED_GATE_MODES:
@@ -613,7 +576,7 @@ def _stage_trainability_mode_name(mode: str) -> str:
 
 
 def apply_trainability_mode(model, args, mode: str) -> dict[str, int]:
-    """Set `requires_grad` for one PANDA Phase12 training stage.
+    """Set `requires_grad` for one PANDA two-stage training stage.
 
     Stage 1 freezes the signed-gate/SRP intervention so the ordinary PANDA
     backbone/head can converge as a standard-attention reference.  Stage 2 then
@@ -648,7 +611,7 @@ def apply_trainability_mode(model, args, mode: str) -> dict[str, int]:
 
 
 def build_adamw_optimizer(model, args) -> torch.optim.Optimizer:
-    """Build PANDA AdamW groups after any Phase12 freeze/unfreeze change."""
+    """Build PANDA AdamW groups after any two-stage freeze/unfreeze change."""
     backbone_decay, method_decay, method_nodecay = [], [], []
     for name, param in model.named_parameters():
         if not param.requires_grad:
@@ -682,7 +645,7 @@ def build_adamw_optimizer(model, args) -> torch.optim.Optimizer:
     if not param_groups:
         raise RuntimeError(
             f"[{args.run_name}] no trainable PANDA parameters under current "
-            "Phase12 trainability mode."
+            "two-stage trainability mode."
         )
     return torch.optim.AdamW(param_groups, lr=args.base_lr, betas=(0.9, 0.999))
 
@@ -860,8 +823,7 @@ def parse_args():
                             "srp_rcd",
                             "srp_rcd_learned_r"],
                    help="Intervention mode. 'srp_signed_gated' is the "
-                        "Phase-A post-attention learned-gate variant from "
-                        "LEARNED_GATE_SRP_PROPOSAL.md §2; RCD modes are "
+                        "post-attention learned-gate variant; RCD modes are "
                         "Method 2.1 and Method 2.1+2.4; "
                         "'srp_signed_gated_pre_q' applies the same signed "
                         "gate to patch Q before QK; "
@@ -869,7 +831,7 @@ def parse_args():
                         "before QK; "
                         "'srp_signed_gated_learned_r' isolates Method 2.4 "
                         "on the original signed-gate formula; "
-                        "'srp_fixed_beta' is the audit-friendly fixed-beta "
+                        "'srp_fixed_beta' is the clear fixed-beta "
                         "alias for srp_beta2 --beta <value>; "
                         "'srp_mlp_control' is the matched-capacity no-SRP "
                         "geometry control.")
@@ -878,8 +840,7 @@ def parse_args():
                         "mode=srp_fixed_beta; ignored under srp_signed_gated "
                         "where β_eff is learned).")
     p.add_argument("--feature_root", type=str, default=None,
-                   help="Directory containing PANDA H5 files. Defaults to "
-                        "the reviewed UNI-v2 root.")
+                   help="Directory containing PANDA H5 files.")
     p.add_argument("--feature_key", type=str, default="features/uni_v2",
                    help="H5 dataset key for patch embeddings. Defaults to "
                         "AtlasPatch UNI-v2 features.")
@@ -887,14 +848,14 @@ def parse_args():
                    help="Feature dimension expected at --feature_key and "
                         "used by the model input projection.")
     p.add_argument("--delta_scale", type=float, default=2.0,
-                   help="Range bound for the signed gate (proposal §2.1): "
+                   help="Range bound for the signed gate (by design): "
                         "β_eff = δ · tanh(raw_logit) ∈ [-δ, +δ]. "
                         "δ=2 covers identity, anti-SRP, full projection, "
                         "and reflection regimes. δ=1 restricts to the "
                         "signed-projection range [-1, +1] (no reflection).")
     p.add_argument("--gate_hidden_dim", type=int, default=16,
                    help="Hidden width of the gate's token MLP. Cheap; "
-                        "16 matches proposal §2.2 and is used in tests.")
+                        "16 matches the released protocol and is used in tests.")
     p.add_argument("--gate_output_init", type=str, default="zero",
                    choices=["zero", "tiny_normal", "xavier_uniform",
                             "kaiming_uniform", "orthogonal", "constant_beta"],
@@ -919,7 +880,7 @@ def parse_args():
                    choices=["legacy", "rawlog", "normlog", "none"],
                    help="Count-feature channels supplied to the signed gate.")
     p.add_argument("--gate_l2_reg", type=float, default=0.0,
-                   help="Optional Phase11 signed-gate containment loss. "
+                   help="Optional signed-gate containment loss. "
                         "When >0, adds gate_l2_reg * mean(beta_eff^2) "
                         "to PANDA signed-gate training objectives.")
     p.add_argument("--rcd_adapter_kind", type=str, default="lowrank",
@@ -930,37 +891,36 @@ def parse_args():
     p.add_argument("--learned_r_hidden_dim", type=int, default=16,
                    help="Hidden width for PANDA Method 2.4 local context scorer.")
     p.add_argument("--srp_freeze_epochs", type=int, default=0,
-                   help="Enable Phase12 two-stage training by freezing PANDA "
+                   help="Enable two-stage training by freezing PANDA "
                         "SRP/gate/RCD method parameters during the base stage. "
-                        "Use the same value as --epochs for the reviewed "
+                        "Use the same value as --epochs for the reported "
                         "15+5 protocol.")
     p.add_argument("--stage2_epochs", type=int, default=0,
-                   help="Extra Phase12 epochs after the frozen-method base "
+                   help="Extra two-stage epochs after the frozen-method base "
                         "stage. At the boundary, the best base checkpoint is "
                         "reloaded, trainability follows --stage2_mode, and "
                         "the optimizer is rebuilt.")
     p.add_argument("--stage2_mode", type=str, default="joint",
                    choices=["joint", "srp_only"],
-                   help="Phase12 stage-2 trainability: joint trains all "
+                   help="Second-stage trainability: joint trains all "
                         "parameters; srp_only trains only PANDA SRP/gate/RCD "
                         "method parameters.")
     p.add_argument("--stage2_lr_mult", type=float, default=1.0,
                    help="Learning-rate multiplier applied only during "
-                        "Phase12 stage 2.")
+                        "the second stage.")
     p.add_argument("--no_detach_gate_inputs", action="store_true",
-                   help="Disable proposal §6.3 detach convention — let "
+                   help="Disable the default detach convention: let "
                         "gradients flow through gate diagnostic inputs "
                         "(cos_yr / y_norms / log_norm_y_mean) into y. "
-                        "Default is the spec-compliant detached regime; "
-                        "this flag enables the empirically better-"
-                        "performing 'live' regime per §6.3.1.")
+                        "Default is the detached regime; this flag enables "
+                        "the live-input ablation.")
     p.add_argument("--srp_r_target", type=str, default="slide_mean",
-                   choices=["slide_mean", "knn8"],
-                   help="SRP r̂ projection target. 'slide_mean' uses the "
-                        "slide-wide mean of v (Round 1); 'knn8' uses the "
-                        "8-neighbour grid-local mean of v from the H5 "
-                        "/coords field (Round 2; mirrors Stage-3 / Phase-2). "
-                        "Meaningful for srp_beta2/srp_fixed_beta and srp_rcd; required for "
+                       choices=["slide_mean", "knn8"],
+                       help="SRP r̂ projection target. 'slide_mean' uses the "
+                            "slide-wide mean of v; 'knn8' uses the "
+                            "8-neighbour grid-local mean of v from the H5 "
+                            "/coords field and mirrors slide-level SRP. "
+                            "Meaningful for srp_beta2/srp_fixed_beta and srp_rcd; required for "
                         "srp_signed_gated, srp_signed_gated_pre_q, "
                         "srp_signed_gated_pre_k, "
                         "srp_signed_gated_learned_r, and srp_rcd_learned_r.")
@@ -1030,7 +990,7 @@ def parse_args():
                         "cv_fold commands; must be omitted under "
                         "global_seed_holdout.")
     p.add_argument("--fold_seed", type=int, default=0)
-    # Phase-A.9 review fix F1: PANDA used to use the held-out fold for
+    # Validation: PANDA used to use the held-out fold for
     # both best-epoch selection AND final reporting (no inner val). That
     # makes reported metrics optimistically biased on absolute scale
     # (paired-Δ vs same-fold baseline is unaffected). The fix carves
@@ -1183,7 +1143,7 @@ def parse_args():
         and args.mode not in _METHOD_SURFACE_MODES
     ):
         raise SystemExit(
-            "[parse_args] Phase12 two-stage PANDA training is currently "
+                "[parse_args] two-stage PANDA training is currently "
             "defined only for explicit method-surface modes: "
             + ", ".join(sorted(_METHOD_SURFACE_MODES))
         )
@@ -1191,7 +1151,7 @@ def parse_args():
     # The signed-gate path is hard-pinned to the knn8 r̂ family at the
     # PandaAttention layer (a slide-wide r̂ would degenerate under
     # per-token gating; see src/vit_panda.py). The CLI default for
-    # --srp_r_target is "slide_mean" (Round 1 default), so a user
+        # --srp_r_target is "slide_mean" by default, so a user
     # running `--mode srp_signed_gated` without explicitly passing
     # `--srp_r_target knn8` would fail at model construction with a
     # cryptic assertion. Catch it here with a clear message so launch
@@ -1229,7 +1189,7 @@ def main() -> None:
     # PANDA supports two protocols:
     #   1. cv_fold: historical provider/ISUP stratified generated folds, with
     #      an inner validation split carved from the non-test folds.
-    #   2. global_seed_holdout: corrected Phase18 protocol matching the slide
+    #   2. global_seed_holdout: corrected global-seed protocol matching the slide
     #      global-seed holdout idea; no fold id enters the command or split.
     feature_root = Path(args.feature_root) if args.feature_root else PANDA_H5_DIR
     print(
@@ -1298,16 +1258,16 @@ def main() -> None:
               f"test_slides={len(test_loader.dataset)} "
               f"(global_seed={args.global_seed})")
     else:
-        # Phase-A.9 review fix F1: 3-way split. The held-out outer fold is
+        # Validation: 3-way split. The held-out outer fold is
         # the untouched TEST set; an inner-val split is carved out of the
-        # remaining 4 folds for best-epoch selection. Pre-fix, the held-out
+        # remaining 4 folds for best-epoch selection. Previously, the held-out
         # fold did both jobs, optimistically biasing the reported metric.
         folds = build_panda_folds(records, n_folds=args.n_folds, fold_seed=args.fold_seed)
         test_idx = folds[args.fold]
         pool_idx = [i for f, fold_list in enumerate(folds) if f != args.fold for i in fold_list]
 
         if args.inner_val_frac > 0.0:
-            # Phase-A.9 second-review fix F4: stratify the inner-val split
+            # Validation: stratify the inner-val split
             # by (data_provider, isup_grade) so model-selection is not
             # confounded by provider/site or rare-grade drift.
             inner_rng = np.random.default_rng(seed=args.fold_seed * 1000 + args.fold + 1)
@@ -1403,19 +1363,19 @@ def main() -> None:
         )
 
     method_names, n_method, n_trainable, n_params = method_parameter_summary(model, args)
-    name_preview = (
+    name_paudit = (
         "+".join(method_names[:5])
         + (f" + {len(method_names) - 5} more" if len(method_names) > 5 else "")
     )
     print(
         f"[{args.run_name}] params_total={n_params:,} trainable={n_trainable:,} "
-        f"method_params={n_method} ({name_preview if method_names else 'none'})"
+        f"method_params={n_method} ({name_paudit if method_names else 'none'})"
     )
 
     optimizer = build_adamw_optimizer(model, args)
 
     # One optimizer step per `grad_accum` slides (BS=1 + accumulation).
-    # Mirrors the slide_level / slide_level_srp Stage-2 / Stage-3 protocol.
+        # Mirrors the slide-level and slide-level SRP optimization protocol.
     n_train_slides = len(train_loader.dataset)
     steps_per_epoch = (n_train_slides + args.grad_accum - 1) // args.grad_accum
     base_total_steps = args.epochs * steps_per_epoch
@@ -1463,7 +1423,8 @@ def main() -> None:
 
     # --- Training loop (BS=1 + grad_accum) ------------------------------
     for epoch in range(total_train_epochs):
-        # Phase12 starts stage 2 after the ordinary `--epochs` budget.  We
+            # Two-stage training starts the second stage after the ordinary
+            # `--epochs` budget. We
         # restart from the best frozen-method checkpoint, not the final epoch,
         # because the final frozen checkpoint may already be past the best
         # model-selection point.
@@ -1527,7 +1488,7 @@ def main() -> None:
             for pg in optimizer.param_groups:
                 pg["lr"] = lr_now
 
-            # Phase-A.9 review fix F4: divide by the **actual** size of the
+            # Validation: divide by the **actual** size of the
             # current accumulation window, not by `args.grad_accum`, so the
             # final partial window of an epoch is not silently underweighted.
             # See slide_level_srp/train.py for the matching fix.
@@ -1539,10 +1500,10 @@ def main() -> None:
                                        srp_r_target=args.srp_r_target,
                                        mode=args.mode)
                 ce_loss = F.cross_entropy(logits.float(), labels)
-                # Phase11 mirrors slide_level_srp/train.py: penalize the
+                # gate-containment mirrors slide_level_srp/train.py: penalize the
                 # realized signed-gate beta surface, not raw logits.  A missing
                 # cache means the command is misconfigured or the gate path did
-                # not execute; count it for artifact review instead of hiding it.
+                # not execute; count it for artifact audit instead of hiding it.
                 gate_l2, gate_l2_blocks = (
                     collect_gate_beta_l2(model, device)
                     if args.gate_l2_reg > 0.0
@@ -1573,7 +1534,7 @@ def main() -> None:
                 slides_in_accum = 0
 
                 if global_step % 50 == 0:
-                    # Phase-A.9 review fix F10: undo per-window scaling
+                    # Validation: undo per-window scaling
                     # consistently (matches the F4 fix above). With
                     # `args.grad_accum`, the final partial window's W&B
                     # step loss was inflated by grad_accum / window_size.
@@ -1586,7 +1547,7 @@ def main() -> None:
                         payload["train/gate_l2_step"] = float(gate_l2.detach().item())
                         payload["train/gate_l2_blocks"] = gate_l2_blocks
                     wandb.log(payload, step=global_step)
-                # Phase-A.9 fourth-review fix F6: per-step gate trajectory
+                # Validation: per-step gate trajectory
                 # for signed-gated runs. Cadence (every 25 steps) matches
                 # the CAM17/CAM16 trainer for cross-task comparability.
                 # No-op when the gate is not active.
@@ -1619,7 +1580,7 @@ def main() -> None:
         # active. The values come from whichever batch was last
         # forwarded inside evaluate(); for eval-set-wide aggregates,
         # the final-eval npz (test_gate_stats) carries the proper
-        # accumulator output. Phase-A.9 review fix F13: prefix renamed
+        # accumulator output. Validation: prefix renamed
         # to `gate_last_batch/` so the W&B dashboard is self-describing
         # (these are last-batch snapshots, not validation aggregates).
         gate_log = gate_diagnostics(model, prefix="gate_last_batch")
@@ -1647,11 +1608,11 @@ def main() -> None:
         stage2_best_val_kappa = float(best_val_kappa)
 
     # --- Final test on the held-out outer fold ------------------------
-    # Phase-A.9 review fix F1: report on `test_loader` (the untouched
+    # Validation: report on `test_loader` (the untouched
     # held-out fold), not on `val_loader` (which under the proper 3-way
     # split is the inner-val pool used only for best-epoch selection).
     # Under legacy --inner_val_frac=0, `test_loader is val_loader` and
-    # behavior matches the pre-fix code.
+    # behavior matches the previous code.
     print(f"[{args.run_name}] reloading best (val_kappa={best_val_kappa:.4f})")
     ckpt = torch.load(best_ckpt, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model"])
@@ -1708,7 +1669,7 @@ def main() -> None:
     print(f"[{args.run_name}] wrote {csv_path} ({len(per_slide)} slides)")
 
     # --- Artifact npz ---------------------------------------------------
-    # Phase-A.9 review fix F1: `per_slide` now comes from the held-out
+    # Validation: `per_slide` now comes from the held-out
     # outer fold (test_loader), not the inner-val pool. Save canonically
     # as `test_y` / `test_logits` etc. The legacy `val_*` aliases are
     # retained so older readouts continue to work; under
@@ -1751,7 +1712,7 @@ def main() -> None:
     }
     # Persist canonical split indices for every modern 3-way protocol.  Keep
     # the old inner_* aliases for cv_fold so legacy analysis can still audit
-    # the Phase-A.9 inner validation fix.
+    # the validation inner validation fix.
     npz["train_idx"] = np.array(train_idx, dtype=np.int64)
     npz["val_idx"]   = np.array(val_idx, dtype=np.int64)
     npz["test_idx"]  = np.array(test_idx, dtype=np.int64)

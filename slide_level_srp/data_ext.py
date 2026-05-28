@@ -10,13 +10,13 @@ Additions in this layer:
   1. `build_neighbor_index(coords, stride)` — compute per-patch 3x3
      spatial neighbor indices from the slide's `/coords` using the
      known patch stride (512 level-0 pixels at 40x per CAMELYON17 h5;
-     see slide_level/DESIGN.md §3.1). Missing cells are represented by
+     see the slide-level baseline implementation). Missing cells are represented by
      index -1 + mask False.
 
   2. `compute_h_morph(features, neighbor_index, neighbor_mask)` — per-patch
      local homogeneity h^morph_i = (1/|N(i)|) Σ_{j in N(i)} cos(u_i, u_j),
      where u_* are the raw UNI v1 features. Computed from the frozen
-     feature extractor (UNI is never updated in this PoC), so h^morph
+     feature extractor (UNI is never updated in this implementation), so h^morph
      is strictly slide-intrinsic and can be cached per-slide.
 
   3. `SRPSlideFeatureDataset` — wraps a stage-2 SlideFeatureDataset and
@@ -26,7 +26,7 @@ Additions in this layer:
   4. `srp_slide_collate` — extends stage-2 `slide_collate` with the three
      new fields. batch_size=1 only (same as stage 2).
 
-Caching: for Phase-1 we keep computation on-the-fly. Each slide's
+Caching: for fixed-beta we keep computation on-the-fly. Each slide's
 neighbor index takes ~10-50 ms and h_morph ~50-200 ms at p100
 (N = 37 666, d = 1024) — negligible vs. the forward pass. If this ever
 becomes a bottleneck we can cache to disk under /tmp.
@@ -52,7 +52,7 @@ from slide_level.src.data import (
 )
 
 
-# CAMELYON17 patch stride at level-0 (40x) per DESIGN.md §3.1. The
+# CAMELYON17 patch stride at level-0 (40x) used by the released protocol. The
 # /coords field stores level-0 pixel coordinates; the integer patch
 # grid is simply coords // PATCH_STRIDE_L0.
 PATCH_STRIDE_L0 = 512
@@ -261,9 +261,8 @@ def compute_h_morph(
     h^morph_i = (1/|N(i)|) Σ_{j in N(i)} cos(u_i, u_j)
 
     Because UNI is used as a frozen extractor and never fine-tuned
-    during Phase-1 training, h^morph is strictly slide-intrinsic —
+    during fixed-beta training, h^morph is strictly slide-intrinsic —
     identical across ablations, epochs, seeds, and optimization steps.
-    Proposal §6.
 
     Args:
       features       (N, D) float32 raw UNI features as read from h5.

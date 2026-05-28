@@ -1,8 +1,7 @@
 """
-Signed learned-gate SRP — TokenHeadGate module.
+Signed learned-gate SRP module.
 
-Implements the gate parameterization from
-[LEARNED_GATE_SRP_PROPOSAL.md] §2.1 / §2.2:
+Implements the TokenHeadGate parameterization:
 
     raw_logit_{i,h} = MLP_token(token_diag_i) + Linear_head(head_diag_{i,h}) + b_{l,h}
     beta_eff_{i,h}  = delta_scale * tanh(raw_logit_{i,h})
@@ -13,9 +12,9 @@ The SRP projection then becomes per-token-per-head:
 
 The gate is identity-initialised: with all output-path parameters set to
 zero, raw_logit = 0 and beta_eff = 0 at step 1, so the model starts as
-the un-projected baseline (proposal §2.3).
+the un-projected baseline (by design).
 
-Why this design (proposal §2.2):
+Why this design:
 
   - **Shared per-token gate (MLP_token) + per-head adjustment
     (Linear_head + per-head bias):** most of the gate decision should
@@ -38,7 +37,7 @@ Why this design (proposal §2.2):
 
 The per-layer bias `b_{l,h}` is owned here (one TokenHeadGate per
 attention layer), so the layer index never has to be threaded through.
-The dead-path rule (proposal §2.4) is enforced *outside* this module by
+The dead-path rule (by design) is enforced *outside* this module by
 not instantiating it in the last attention block — the rule is an
 architectural choice of the parent transformer, not the gate itself.
 """
@@ -147,7 +146,7 @@ class TokenHeadGate(nn.Module):
       token_diag (B, N, T_token)
         Per-token diagnostics, shared across heads. Suggested:
           [h_local, neighbour_count/8, norm_r_mean, local_variance, ...]
-        See proposal §2.2 for the full list. The exact set is dataset-
+        See the released protocol for the full list. The exact set is dataset-
         specific; only the dimensionality T_token must match what was
         passed at construction.
       head_diag (B, H, N, T_head)
@@ -184,7 +183,7 @@ class TokenHeadGate(nn.Module):
         factorization: str = "full",
     ) -> None:
         super().__init__()
-        # Phase-A.9 review fix F11: public CLI/config validation must
+        # Validation: public CLI/config validation must
         # raise a real exception (kept under `python -O`).
         if delta_scale <= 0.0:
             raise ValueError(f"delta_scale must be positive, got {delta_scale}")
@@ -357,7 +356,7 @@ class TokenHeadGate(nn.Module):
     def reset_identity(self) -> None:
         """
         Zero-init all output-path parameters so the gate emits
-        beta_eff = 0 everywhere at construction (proposal §2.3).
+        beta_eff = 0 everywhere at construction (by design).
 
         This remains available for tests and exact-identity probes.
         Parent modules should normally call `reset_output_path()` after
@@ -391,7 +390,7 @@ class TokenHeadGate(nn.Module):
         """
         B, N, Tt = token_diag.shape
         Bh, H, Nh, Th = head_diag.shape
-        # Phase-A.9 review fix F11: runtime tensor-shape contracts must
+        # Validation: runtime tensor-shape contracts must
         # raise (kept under `python -O`). Cheaper than letting downstream
         # einsum blow up with cryptic messages.
         if B != Bh or N != Nh:
@@ -458,7 +457,7 @@ class GateStatsAccumulator:
 
     Why this matters: without per-example accumulation, the only gate
     record left after training is the LAST eval batch's stats — the
-    proposal §2.6 diagnostic suite is designed for cross-class /
+    gate diagnostics are designed for cross-class /
     cross-provider / cross-length stratification, which requires
     per-example records, not single-batch snapshots.
 
@@ -627,8 +626,9 @@ class GateStatsAccumulator:
 
 def signed_gate_step_summary(model: nn.Module) -> dict[str, float]:
     """
-    Phase-A.9 fourth-review fix F6: lightweight per-step gate trajectory
-    snapshot. Returns a small flat dict of scalars suitable for direct
+    Lightweight per-step gate trajectory snapshot.
+
+    Returns a small flat dict of scalars suitable for direct
     W&B logging during training, e.g.::
 
         {"gate_step/block0/beta_mean": ..., "gate_step/block0/frac_neg": ...}
@@ -649,12 +649,9 @@ def signed_gate_step_summary(model: nn.Module) -> dict[str, float]:
     off, or none of the blocks have populated `_last_gate_stats`),
     making this safe to call unconditionally.
 
-    Why this exists: pre-fix, the trainer's per-step trajectory branch
-    only logged α/β scalars, so signed-gated runs had no W&B record of
-    *whether the gate moved during training*. End-of-epoch and final
-    artifacts captured the gate state, but stuck-gate diagnosis required
-    re-running with extra prints. This helper closes that gap with a
-    tiny W&B payload.
+    Why this exists: scalar α/β trajectory logs do not describe signed-gate
+    motion. This helper records compact per-step summaries so gate movement
+    can be checked without changing the training loop or saving large tensors.
     """
     out: dict[str, float] = {}
     if not hasattr(model, "blocks"):
@@ -704,10 +701,8 @@ def collect_gate_module_ids(model: nn.Module) -> set[int]:
     which walks every Linear including the gate's `token_mlp_hidden`
     and `token_mlp_out`. Each `trunc_normal_` call consumes the global
     RNG, so non-gate Linears later in the iteration order receive
-    different random draws than they would in a baseline build at the
-    same seed. The result: same-seed paired comparisons are contaminated
-    — the bug the colleague review flagged in PANDA's
-    `blocks.0.mlp.fc1.weight` (max-abs diff ≈ 0.097 vs baseline).
+    different random draws than they would in a baseline build at the same
+    seed, contaminating same-seed paired comparisons.
 
     The fix is to leave the gate's submodules at their PyTorch-default
     init (Kaiming for nn.Linear) and let the gate's own
@@ -763,7 +758,7 @@ def make_token_diag(
         for e in extras:
             _add(e)
 
-    # Phase-A.9 fourth-review fix F4: data-contract validation must
+    # Validation: data-contract validation must
     # raise ValueError so it survives `python -O` (asserts are stripped).
     if not cols:
         raise ValueError("at least one token-level diagnostic must be provided")

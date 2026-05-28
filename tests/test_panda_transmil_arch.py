@@ -3,7 +3,7 @@
 These tests keep the reported PANDA TransMIL rerun path honest without
 touching real data or GPUs.  The important contract is that `--arch transmil`
 can instantiate and forward the same four method families used by the other
-WSI classification datasets: Standard SA, XSA, Differential Transformer, and
+WSI classification datasets: NA, XSA, Diff, and
 Gated SRP.
 """
 

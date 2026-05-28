@@ -1,44 +1,8 @@
-"""
-Single-run training entry for the slide-level SRP PoC (stage 3).
+"""Single-run training entry for slide-level classification.
 
-Adapted from slide_level/train.py with minimal surgical changes per
-proposal §12.6:
-
-  (1) `--ablation` accepts the stage-3 names:
-        baseline | xsa_all_ref | srp_patch_hard | srp_patch_learn
-        | srp_patch_preV | srp_patch_gated
-
-  (2) The dataset path now uses SRPSlideFeatureDataset which adds
-      neighbor_index, neighbor_mask, and h_morph to every batch.
-      Also writes `mean_h_morph` to predictions.csv (the slide-intrinsic
-      covariate for the §13.4.3a homogeneity regression).
-
-  (3) The model is chosen by ablation backend:
-        xsa_all_ref                  -> stage-2 NystromXSAggregator
-                                        (the ONLY xsa-backend run; kept
-                                        for stage-2 continuity at α_*=1)
-        baseline, srp_patch_*        -> NystromSRPAggregator (stage-3),
-                                        baseline with beta_patch_mode=
-                                        "zero" (numerically equivalent
-                                        to stage-2 α_*=0 per unit tests)
-      The SRPSlideFeatureDataset collate always emits SRP tensors; the
-      XSA-backend model simply ignores them because it doesn't take
-      those positional arguments — we dispatch in `_model_forward`.
-
-  (4) Beta / alpha trajectory logging: we log alpha_patch/alpha_cls for
-      the xsa-backend ablation and beta_patch for every SRP-backend
-      ablation (including baseline, whose beta is fixed at 0), into
-      separately-keyed W&B metrics (alpha_step/* vs beta_step/*).
-
-  (5) At test time, test_artifacts.npz captures alphas OR betas
-      depending on which backend was used, under distinct keys.
-      SRP-backend runs additionally write per_slide_diagnostics.npz
-      with §8.2.D/E per-slide summaries (placement signature,
-      attention-weighted retention under pre_v, z_over_y by
-      h^morph quartile).
-
-Reuses stage-2 helpers (fold assignment, autocast_ctx, compute_metrics,
-cosine_warmup_lr) via direct import.
+The CLI selects one attention backend with `--ablation`: NA, XSA, Diff, fixed
+SRP variants, or signed-gated SRP. Dataset adapters provide each WSI bag plus
+the neighbor tensors needed by local spatial redundancy projection.
 """
 
 from __future__ import annotations
@@ -86,7 +50,7 @@ from slide_level.src.diagnostics import (
     set_capture_mode as set_capture_mode_xsa,
 )
 
-# Stage-3 (SRP) imports.
+# slide-level SRP (SRP) imports.
 from slide_level_srp.src.diff_transformer import NystromDiffTransformerAggregator
 from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
 from slide_level_srp.src.srp_diagnostics import (
@@ -105,20 +69,20 @@ from slide_level_srp.data_ext import (
 )
 
 
-# --- Method-parameter classifier (Phase-A.9 review fixes F2 + F1-3rd) ---
+# --- Method-parameter classifier -------------------------------------
 # Single source of truth for "what counts as a method-specific parameter
 # for this ablation". Used by:
 #   - --freeze_others (the conditional-optimum probe)
 #   - method-parameter counts / names in the startup log
 #   - optimizer weight-decay grouping
-#   - --ab_lr_mult LR scaling (Phase-A.9 third-review fix F1)
+#   - --ab_lr_mult LR scaling
 #   - W&B / artifact logging
 #
 # For non-signed-gated ablations, the method scalars are alpha/beta. For
 # `srp_patch_signed_gated`, the actual learnables live under `gate.*`
 # (e.g. blocks.{i}.attn.gate.token_mlp_*.weight, gate.head_weight,
 # gate.head_bias, gate.layer_head_bias) and `beta_patch` becomes a
-# non-trainable buffer. Pre-fix, freeze_others on a signed-gated run
+# non-trainable buffer. Previously, freeze_others on a signed-gated run
 # would freeze every gate parameter → zero method params trainable.
 _SIGNED_GATE_ABLATIONS = {
     "srp_patch_signed_gated",
@@ -192,7 +156,7 @@ def is_method_no_decay(name: str, ablation: str) -> bool:
     For non-signed-gated ablations: all alpha/beta scalars are no-decay.
     For signed-gated: only gate **biases** (`*.layer_head_bias`,
     `*.head_bias`, gate-internal `*.bias`) are no-decay; gate **weights**
-    receive the normal weight_decay (proposal §6.4 specifies that biases
+    receive the normal weight_decay (the optimizer setup specifies that biases
     initialized at zero must not be pulled back to zero by AdamW decay,
     but weights have no such constraint).
     """
@@ -226,7 +190,7 @@ def is_method_no_decay(name: str, ablation: str) -> bool:
 # Map --ablation to (backend, kwargs for the model-specific constructor).
 # backend == "xsa":  use stage-2 NystromXSAggregator, forwarded(features).
 # backend == "diff": use Diff Transformer comparator, forwarded(features).
-# backend == "srp":  use stage-3 NystromSRPAggregator, forwarded(features,
+# backend == "srp":  use slide-level SRP NystromSRPAggregator, forwarded(features,
 #                    neighbor_index, neighbor_mask, h_morph=h_morph).
 _ABLATIONS = {
     # baseline now runs through the SRP backend with beta_patch=zero so
@@ -270,7 +234,7 @@ _ABLATIONS = {
         "backend": "srp",
         "beta_patch_mode": "learn", "srp_mode": "post_agg_gated",
     },
-    # --- Phase-1.5: β-init sweep (proposal §5.2, §Phase-1.5 RESULTS §10) ---
+    # --- fixed-beta: β-init sweep -----------------------------------------
     # Goal: disambiguate whether β = init is a local minimum (β drifts back
     # to ≈1 from any start) or the β gradient is genuinely too weak
     # (β stays near its init regardless). All three share β_mode=learn
@@ -292,8 +256,8 @@ _ABLATIONS = {
         "beta_patch_mode": "learn", "srp_mode": "post_agg",
         "beta_init": 2.0,
     },
-    # --- Phase-1.5 β-grid: fixed β at values not already covered by
-    # Phase-1 baselines/hard. The β-init sweep showed β stays at init
+    # --- fixed-beta β-grid: fixed β at values not already covered by
+    # fixed-beta baselines/hard. The β-init sweep showed β stays at init
     # throughout training (drift < 0.003), so "fixed β" and "learnable
     # β at init=X" are empirically interchangeable; we use "fixed"
     # for the gridsearch to make intent explicit and eliminate the
@@ -334,21 +298,21 @@ _ABLATIONS = {
         "beta_patch_mode": "fixed", "srp_mode": "post_agg",
         "beta_init": -1.0,
     },
-    # Gated variant with β_base = 2 (instead of Phase-1's β_base = 1).
+    # Gated variant with β_base = 2 (instead of fixed-beta's β_base = 1).
     # Effective β_i = 2 · clamp(h_morph_i, 0, 1). On average,
     # mean(h_morph) ≈ 0.61, so effective β ≈ 1.22 — lies in the
     # "between full projection and full reflection" regime. Tests
     # whether the reflection mechanism (β=2 winner from β-init) stacks
-    # with the gate mechanism (gated winner from Phase-1). [Phase-1.5+
-    # result: does NOT stack, p=0.49 vs β=2 fixed; see RESULTS.md §14.4.]
+    # with the gate mechanism (gated winner from fixed-beta). [fixed-beta
+    # result: does NOT stack, p=0.49 vs β=2 fixed; see RESULTS.md reported result]
     "srp_patch_gated_beta2": {
         "backend": "srp",
         "beta_patch_mode": "fixed", "srp_mode": "post_agg_gated",
         "beta_init": 2.0,
     },
-    # Pre-aggregation reflection (Phase-1.5+ final follow-up).
+    # Pre-aggregation reflection (fixed-beta final follow-up).
     # v'_j = v_j - 2·(v_j·r̂_j)·r̂_j applied BEFORE Nyström aggregation.
-    # β̃=1 pre_v was catastrophic in Phase-1 (F1=0.49) because it
+    # β̃=1 pre_v was catastrophic in fixed-beta (F1=0.49) because it
     # projected away ~50% of each v_j's magnitude (ρ=0.48), destroying
     # signal alongside redundancy. β̃=2 (reflection) is norm-preserving
     # (ρ=1.0 by construction) — tests whether reflection rescues pre-V
@@ -360,7 +324,7 @@ _ABLATIONS = {
         "beta_patch_mode": "fixed", "srp_mode": "pre_v",
         "beta_init": 2.0,
     },
-    # --- Phase-A signed-gate (LEARNED_GATE_SRP_PROPOSAL.md §2). The
+    # --- signed-gate (the signed-gate design). The
     # `beta_patch_mode='signed_gated'` + `srp_mode='post_agg_signed_gated'`
     # pair is mandatory; the aggregator asserts this. delta_scale is a
     # CLI flag (--delta_scale) so the same ablation can be run at
@@ -393,8 +357,8 @@ _ABLATIONS = {
     # --- Standalone Method 2.4: learned local redundancy direction on the
     # original signed-gate intervention.  This is intentionally NOT RCD:
     # z_i = y_i - beta_eff_i * (y_i^T r_hat_i^theta) r_hat_i^theta.
-    # It lets Phase14b isolate whether learning r_hat helps without changing
-    # the signed-gate formula that Phase10/11/12 already evaluated.
+    # It lets learned-local-r isolate whether learning r_hat helps without changing
+    # the signed-gate formula that experiment already evaluated.
     "srp_patch_signed_gated_learned_r": {
         "backend": "srp",
         "beta_patch_mode": "signed_gated",
@@ -499,7 +463,7 @@ def _compute_h_local_torch(
     relative to the Nyström attention path.
 
     Used as a per-token diagnostic input to the signed gate
-    (LEARNED_GATE_SRP_PROPOSAL.md §6.2). h_local is intrinsic to the
+    (the signed-gate design). h_local is intrinsic to the
     raw input features and shared across all aggregator blocks.
     """
     eps = 1e-12
@@ -527,7 +491,7 @@ def _model_forward(model, batch, backend: str, device, ablation_spec=None):
     backend == "xsa"  -> stage-2 model; only `features` consumed.
     backend == "diff" -> Diff Transformer comparator; only `features`
                          consumed.
-    backend == "srp" -> stage-3 model; neighbor_index, neighbor_mask, and
+    backend == "srp" -> slide-level SRP model; neighbor_index, neighbor_mask, and
                         h_morph threaded through. Under
                         any signed-gated SRP mode, or
                         'post_agg_rcd_learned_r', `h_local` is also computed
@@ -587,8 +551,8 @@ def run_eval(
     capture / stats-accumulator machinery is selected via `backend`.
 
     If `collect_per_slide_diagnostics` is True (test time only), also
-    compute the per-slide SRP diagnostic bundle that §8.2.D/E and
-    §13.4.3a's homogeneity regression need — cos(y_cls, r̄) per (L, H),
+    compute the per-slide SRP diagnostic bundle that attention diagnostics and
+    homogeneity regression need — cos(y_cls, r̄) per (L, H),
     bar_rho_cls per (L, H), z_over_y by h^morph quartile per (L, H),
     mean_h_morph, mean_h_V. XSA-backend runs get zeros for the SRP
     fields, keeping the output schema uniform. The per-slide pack is
@@ -616,7 +580,7 @@ def run_eval(
         assert set_capture_mode_fn is not None
         set_capture_mode_fn(model, True)
 
-    # Phase-A.9 calibration-reframe (CALIBRATION_REFRAME_2026-04-28.md):
+    # validation calibration-reframe (the calibration instrumentation):
     # Accumulate raw logits in addition to softmax probs so test_artifacts.npz
     # can carry pre-softmax outputs for downstream ECE / Brier / temperature-
     # scaling analysis.
@@ -662,7 +626,7 @@ def run_eval(
             n += labels.numel()
 
             # Per-slide covariate for the homogeneity regression
-            # (§13.4.3a). Computed from the raw UNI-derived h^morph,
+            # (by design). Computed from the raw UNI-derived h^morph,
             # slide-intrinsic regardless of ablation.
             mean_h_morph = float(batch["h_morph"].mean().item()) if "h_morph" in batch else float("nan")
 
@@ -786,7 +750,7 @@ def parse_args():
                    help="One of: " + ", ".join(_ABLATIONS.keys()))
     p.add_argument("--beta_init", type=float, default=1.0,
                    help="Init value for learnable beta_patch (SRP backends only).")
-    # Signed-gate parameters (LEARNED_GATE_SRP_PROPOSAL.md §2.1, §2.2).
+    # Signed-gate parameters.
     # Only consumed under signed-gated SRP ablations; ignored otherwise.
     # Default δ=2 covers identity / anti-SRP / projection / reflection in
     # [-2, +2]; pass --delta_scale 1.0 for signed-projection-only variants.
@@ -833,26 +797,25 @@ def parse_args():
                         "frozen. Intended for two-stage method-surface runs.")
     p.add_argument("--stage2_epochs", type=int, default=0,
                    help="Extra epochs after the base --epochs budget. At the "
-                        "stage-2 boundary the best stage-1 checkpoint is "
+                        "second-stage boundary the best first-stage checkpoint is "
                         "reloaded, trainability is reset according to "
                         "--stage2_mode, and the optimizer is rebuilt.")
     p.add_argument("--stage2_mode", type=str, default="joint",
                    choices=["joint", "srp_only"],
-                   help="Stage-2 trainability policy. joint trains all "
+                   help="Second-stage trainability policy. joint trains all "
                         "parameters; srp_only trains only SRP/gate method "
                         "parameters.")
     p.add_argument("--stage2_lr_mult", type=float, default=1.0,
                    help="Multiplier applied to the base LR schedule during "
-                        "stage 2. Primary protocol keeps this at 1.0.")
+                        "the second stage. Primary protocol keeps this at 1.0.")
     p.add_argument("--no_detach_gate_inputs", action="store_true",
-                   help="Disable proposal §6.3 detach convention — let "
+                   help="Disable the default detach convention: let "
                         "gradients flow through gate diagnostic inputs "
                         "(cos_yr / y_norms) into y. Default is the "
-                        "spec-compliant detached regime; this flag "
-                        "enables the empirically better-performing "
-                        "'live' regime per §6.3.1.")
+                        "detached regime; this flag enables the live-input "
+                        "ablation.")
     p.add_argument("--no_ppeg", action="store_true",
-                   help="Phase-A.9 ablation (REPORT.md §17.2): replace "
+                   help="Replace "
                         "PPEG with nn.Identity to test whether the "
                         "δ=2 reflection regime's productivity on "
                         "TransMIL is PPEG-mediated. Default is the "
@@ -928,7 +891,7 @@ def parse_args():
     p.add_argument("--dataset", type=str, default="cam17",
                    choices=["cam17", "cam17_univ2", "cam16", "cam16_univ2", "kgh", "bracs"],
                    help="Dataset adapter to use. cam17 = original "
-                        "Stage-3 4-class slide classification; cam16 = "
+                        "slide-level SRP 4-class slide classification; cam16 = "
                         "binary tumor/normal CAM16 on ViT-B/16 features; "
                         "cam17_univ2 = CAM17 4-class on 1536-d UNI-v2; "
                         "cam16_univ2 = binary CAM16 on 1536-d UNI-v2; "
@@ -1126,7 +1089,7 @@ def _build_model(args, backend: str, spec: dict, device):
          launcher doesn't need to thread --beta_init on the CLI.
       2. args.beta_init CLI flag (default 1.0) — used by the primary
          sweep's learnable ablations (srp_patch_learn, srp_patch_preV,
-         srp_patch_gated), where the init is always 1.0 per proposal §5.2.
+         srp_patch_gated), where the init is always 1.0 by design
     """
     if backend == "xsa":
         if args.ln_specialization != "shared":
@@ -1540,7 +1503,7 @@ def main() -> None:
         print(f"[{args.run_name}] gpu={torch.cuda.get_device_name(0)}")
 
     # --- Data + fold ------------------------------------------------------
-    # Dispatch on --dataset. Default = cam17 (the original Stage-3
+    # Dispatch on --dataset. Default = cam17 (the original slide-level SRP
     # path). cam16 = binary tumor/normal CAM16 with ViT-B/16 features;
     # see slide_level_srp/data_cam16.py for the adapter and env vars.
     split_metadata = None
@@ -1656,10 +1619,8 @@ def main() -> None:
                 test_frac=0.20,
                 val_frac=0.10,
             )
-        # Phase-A.9 review fix F8: pass all three caps explicitly. Pre-fix
-        # only `train_cap` was plumbed (as `subsample_cap` for all splits),
-        # silently ignoring `--val_cap` / `--test_cap`. Now each split
-        # honours its own cap; defaults to `subsample_cap` when unset.
+        # Validation: pass all three caps explicitly so each split honours its
+        # own cap; defaults to `subsample_cap` when a split-specific cap is unset.
         train_loader, val_loader, test_loader = build_cam16_loaders_for_fold(
             records, fa, num_workers=args.num_workers,
             subsample_cap=args.train_cap,
@@ -1838,7 +1799,7 @@ def main() -> None:
     model = _build_model(args, backend, spec, device)
 
     # --- Probe-mode hooks (additive; default-behavior preserved) ---------
-    # 1. Optionally warm-start from a previously-saved best.pt.  Architecture
+    # 1. Optionally warm-start from an existing best.pt. Architecture
     #    must match (same ablation), so we use strict load. weights_only=False
     #    matches train.py's existing torch.save format which stores a dict
     #    {"epoch", "model", "args", "val_metrics"}.
@@ -1855,10 +1816,10 @@ def main() -> None:
     #    the conditional-optimum probe: with surrounding weights pinned at
     #    their trained values, α/β have no co-adaptation partner, so wherever
     #    they land is their loss-conditional optimum.
-    # Phase-A.9 review fix F2: route `freeze_others` and method-param
+    # Validation: route `freeze_others` and method-param
     # accounting through `is_method_param(name, args.ablation)` so that
     # `srp_patch_signed_gated` correctly identifies `gate.*` as the
-    # method's learnable surface. Pre-fix, the predicate was
+    # method's learnable surface. Previously, the predicate was
     # alpha/beta-only and would freeze the entire gate or undercount
     # signed-gated method params.
     if getattr(args, "freeze_others", False):
@@ -1912,7 +1873,7 @@ def main() -> None:
     # alpha/beta parameters get weight_decay=0 so decoupled AdamW does not
     # mechanically pull them toward 0. Signed-gate biases share that no-decay
     # treatment, while gate weights remain in a decayed method group.  The
-    # helper is reused at the stage-2 boundary after trainability changes.
+        # helper is reused at the second-stage boundary after trainability changes.
     optimizer = build_adamw_optimizer(model, args)
     steps_per_epoch = (len(train_loader.dataset) + args.grad_accum - 1) // args.grad_accum
     base_total_steps = args.epochs * steps_per_epoch
@@ -1988,7 +1949,7 @@ def main() -> None:
         p.requires_grad for n, p in model.named_parameters()
         if "alpha_cls" in n or "alpha_patch" in n or "beta_patch" in n
     )
-    # Phase-A.9 fourth-review fix F6: signed-gated runs have no α/β
+    # Validation: signed-gated runs have no α/β
     # scalars, so the legacy `has_learnable_ab` branch is silent. Detect
     # signed_gated mode separately and log a small gate-step summary
     # alongside the trajectory cadence.
@@ -1997,10 +1958,11 @@ def main() -> None:
 
     # --- Training loop ---------------------------------------------------
     for epoch in range(total_train_epochs):
-        # Stage-2 starts after the ordinary --epochs budget.  Reloading the
-        # best stage-1 checkpoint prevents a noisy final stage-1 epoch from
-        # defining the fine-tune start point, and resetting `best_val_f1`
-        # ensures final testing evaluates the best stage-2 checkpoint rather
+            # The second stage starts after the ordinary --epochs budget. Reloading
+            # the best first-stage checkpoint prevents a noisy final first-stage
+            # epoch from defining the fine-tune start point, and resetting
+            # `best_val_f1` ensures final testing evaluates the best second-stage
+            # checkpoint rather
         # than silently falling back to the frozen-gate baseline.
         if stage_protocol_enabled and args.stage2_epochs > 0 and epoch == args.epochs:
             stage1_best_val_f1 = float(best_val_f1)
@@ -2061,13 +2023,10 @@ def main() -> None:
             lr_now = cosine_warmup_lr(
                 stage_step, stage_warmup_steps, stage_total_steps, stage_base_lr, min_lr=0.0,
             )
-            # Phase-A.9 third-review fix F1: --ab_lr_mult now scales
-            # BOTH method groups (gate weights + gate biases under
-            # signed_gated; α/β scalars under legacy ablations). Pre-fix,
-            # only ab_nodecay (gate biases) was scaled — meaning the
-            # lrmult* runs in the existing PHASE_A6/A7 results actually
-            # scaled gate biases only. With mult=1.0 this is a no-op and
-            # bit-exactly reproduces the original training trajectory.
+            # Validation: --ab_lr_mult scales both method groups: gate
+            # weights + gate biases under signed_gated, and α/β scalars under
+            # legacy ablations. With mult=1.0 this is a no-op and preserves
+            # the original training trajectory.
             method_groups = ("ab_nodecay", "method_decay")
             for pg in optimizer.param_groups:
                 if pg.get("group_name") in method_groups and args.ab_lr_mult != 1.0:
@@ -2075,7 +2034,7 @@ def main() -> None:
                 else:
                     pg["lr"] = lr_now
 
-            # Phase-A.9 review fix F4: divide by the **actual** size of the
+            # Validation: divide by the **actual** size of the
             # current accumulation window, not by `args.grad_accum`. Without
             # this, the final partial window of an epoch (with size
             # `len(loader) % grad_accum`) had its gradients underscaled —
@@ -2153,7 +2112,7 @@ def main() -> None:
                             {"beta_step/beta_patch_mean": float(b["beta_patch"].mean())},
                             step=global_step,
                         )
-                # Phase-A.9 fourth-review fix F6: signed-gate trajectory
+                # Validation: signed-gate trajectory
                 # snapshot. Reads `_last_gate_stats` populated by the most
                 # recent forward and logs per-block β_eff means / sign-bin
                 # fractions. No-op when the gate is not active.
@@ -2326,8 +2285,8 @@ def main() -> None:
         wandb.log(payload, step=global_step)
 
     # --- Per-slide CSV --------------------------------------------------
-    # Adds mean_h_morph to the stage-2 schema — this is the slide-intrinsic
-    # covariate the homogeneity regression (§13.4.3a) consumes. Under the
+        # Adds mean_h_morph to the baseline per-slide schema. This is the slide-intrinsic
+    # covariate the homogeneity regression (by design) consumes. Under the
     # XSA backend (xsa_all_ref ablation only) we still compute it from the
     # SRP data path since the batch dict always contains h_morph; it's a
     # slide-intrinsic quantity independent of model state.
@@ -2369,7 +2328,7 @@ def main() -> None:
             writer.writerow(record)
     print(f"[{args.run_name}] wrote {csv_path}  ({len(per_slide)} rows, K={K})")
 
-    # --- Per-slide SRP diagnostics (supplementary, analyze.py §8.2.D/E) ---
+    # --- Per-slide SRP diagnostics (supplementary, attention diagnostics) ---
     # Only populated for SRP-backend ablations; for xsa_all_ref this list
     # is empty and we skip writing the npz so downstream code can
     # distinguish "SRP diagnostics unavailable" from "empty".
@@ -2438,8 +2397,8 @@ def main() -> None:
         "ln_specialization": args.ln_specialization,
         "ln_specialization_scope": args.ln_specialization_scope,
     }
-    # Phase-A.9 calibration-reframe instrumentation
-    # ([CALIBRATION_REFRAME_2026-04-28.md](analysis_phaseA/CALIBRATION_REFRAME_2026-04-28.md)).
+    # validation calibration-reframe instrumentation
+    # ([the calibration instrumentation](analysis_phaseA/the calibration instrumentation)).
     # Persist (y_true, y_logits) so downstream ECE / Brier / NLL /
     # temperature-scaling analyses don't need a re-evaluation.
     if test_eval_arrays.get("y_true") is not None:
@@ -2468,7 +2427,7 @@ def main() -> None:
             npz_payload["beta_history_patch"] = np.stack(
                 [h["beta_patch"] for h in ab_history], axis=0,
             )
-    # Per-example signed-gate stats (proposal §2.6). Empty dict for
+    # Per-example signed-gate stats (by design). Empty dict for
     # non-signed-gated runs; under signed_gated the keys are the
     # gate_block{i}_{stat} entries that downstream analysis relies on.
     for k, v in test_gate_stats.items():

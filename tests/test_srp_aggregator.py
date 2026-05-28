@@ -86,8 +86,8 @@ def test_A_forward_shape_all_modes():
 def test_B_baseline_equivalence_with_stage2():
     """Under beta=0 and a synthetic baseline ablation, SRPAggregator
     must produce bit-for-bit the same logits as stage-2 XSAggregator
-    with alpha_*=0. This is the paired-per-slide guarantee required by
-    proposal §13.5.
+    with alpha_*=0. This is the paired-per-slide guarantee used by the
+    released reproduction protocol.
     """
     features, nbi, nbm, h_m = _synthetic_slide()
 
@@ -134,8 +134,8 @@ def test_D_gated_requires_h_morph():
         checkpoint_mode="off",
     )
     mod.eval()
-    # h_morph=None should raise. Accept either AssertionError (pre-fix)
-    # or ValueError (post-Phase-A.9 second-review F7 fix).
+    # h_morph=None should raise. Accept either AssertionError (previous)
+    # or ValueError (post-validation second-audit F7 fix).
     raised = False
     try:
         mod(features, nbi, nbm, h_morph=None)
@@ -278,7 +278,7 @@ def test_I_signed_gate_identity_still_holds_with_layerscale():
 def test_I2_pre_attention_signed_gate_identity_matches_baseline():
     """All signed-gated placements must start from the same baseline model.
 
-    This protects the live Phase15/16 ablations too: adding new modes must not
+    This protects the live live ablation ablations too: adding new modes must not
     perturb the non-gate initialization or the existing zero-beta behavior.
     """
     features, nbi, nbm, h_local = _synthetic_slide(in_dim=32)

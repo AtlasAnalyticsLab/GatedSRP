@@ -43,7 +43,7 @@ def enumerate_cam17_univ2_slides(
     num_classes: int = 4,
     csv_path: str = CAM17_STAGES_CSV,
 ) -> List[SlideRecord]:
-    """Join CAM17 labels with the reviewed UNI-v2 feature inventory.
+    """Join CAM17 labels with the reported UNI-v2 feature inventory.
 
     We intentionally reuse CAM17's existing ``enumerate_slides`` helper.  That
     keeps the official label mapping and the documented missing-slide behavior

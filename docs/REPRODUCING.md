@@ -37,6 +37,8 @@ For CPU-only smoke tests, install the CPU PyTorch wheel instead.
 
 1. Download datasets as described in [DATASETS.md](DATASETS.md).
 2. Extract UNI-v2 H5 embeddings as described in [EMBEDDINGS.md](EMBEDDINGS.md).
+   For the patch-encoder ablation, also prepare MedSigLIP-448 and ViT-B/16
+   H5 embeddings with the documented keys.
 3. Source path variables:
 
 ```bash
@@ -86,13 +88,44 @@ python scripts/run_manifest.py configs/paper_tcga_survival.tsv
 
 This writes runs under `GATEDSRP_TCGA_SURVIVAL_OUT`, defaulting to `runs/tcga_survival_global_seed_main`.
 
-## 5. Collect Tables
+## 5. Run Ablations
+
+Architecture-choice ablation:
+
+```bash
+python scripts/run_manifest.py configs/paper_architecture_ablation.tsv \
+  --where dataset=adp --where method=mhsa --where seed=42 --dry-run
+python scripts/run_manifest.py configs/paper_architecture_ablation.tsv
+```
+
+Design ablations:
+
+```bash
+python scripts/run_manifest.py configs/paper_design_ablation.tsv \
+  --where phase=gate_range --where dataset=panda --where seed=42 --dry-run
+python scripts/run_manifest.py configs/paper_design_ablation.tsv
+```
+
+Patch-encoder ablation:
+
+```bash
+python scripts/run_manifest.py configs/paper_patch_encoder_ablation.tsv \
+  --where encoder=MSL-448 --where dataset=KIRP --where method=gated_srp --where seed=42 --dry-run
+python scripts/run_manifest.py configs/paper_patch_encoder_ablation.tsv
+```
+
+These write runs under `GATEDSRP_ARCHITECTURE_OUT`, `GATEDSRP_ABLATION_OUT`,
+and `GATEDSRP_PATCH_ENCODER_OUT`.
+
+## 6. Collect Tables
 
 ```bash
 python scripts/collect_paper_results.py --strict
 ```
 
-Collected rerun summaries are written to `results/rerun/`. Reference tables are in `results/`.
+Collected main-run summaries are written to `results/rerun/`. Reference tables
+are in `results/`. The ablation reference TSVs are already stored separately in
+`results/ablation_*.tsv`.
 
 ## Notes on Compute
 

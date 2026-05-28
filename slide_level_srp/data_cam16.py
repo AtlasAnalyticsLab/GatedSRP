@@ -283,7 +283,7 @@ class Cam16SlideDataset(Dataset):
 def cam16_slide_collate(batch: List[Dict]) -> Dict:
     """batch_size=1 only, mirroring stage-2 / data_ext convention.
 
-    Phase-A.9 third-review fix F6: runtime collate contract → ValueError.
+    Validation: runtime collate contract → ValueError.
     """
     if len(batch) != 1:
         raise ValueError(
@@ -322,7 +322,7 @@ def build_cam16_loaders_for_fold(
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Build (train, val, test) DataLoaders for one CAM16 fold.
 
-    Phase-A.9 review fix F8: per-split caps are now first-class so the
+    Validation: per-split caps are now first-class so the
     trainer's `--train_cap` / `--val_cap` / `--test_cap` flags actually
     take effect. Each per-split cap defaults to `subsample_cap`, which
     was the previous (uniform) behaviour.

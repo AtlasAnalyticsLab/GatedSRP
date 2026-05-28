@@ -21,7 +21,7 @@ wandb/
 *.h5
 *.hdf5
 
-# Local notes generated during this release audit.
+# Local notes.
 .release_audit/
 .env.local
 

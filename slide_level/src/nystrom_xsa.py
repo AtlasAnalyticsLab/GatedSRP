@@ -44,7 +44,7 @@ Diagnostics (see stage-1 src/diagnostics.py for semantics):
     cls_self_attn:   (B, H) -- a_{cls,cls} = F[b, h, 0, :] @ A_inv[b, h, :, :]
                                @ B[b, h, :, 0], precomputed (the Nyström
                                equivalent of a_{cls,cls} from full attention;
-                               see DESIGN.md §4.4).
+                               see the released protocol).
     cos_yv_pre:      (B, H, N) -- cos(y_i, v_i) before projection
     cos_zv_post:     (B, H, N) -- cos(z_i, v_i) after projection
     y_norm, v_norm, z_norm: (B, H, N) -- per-head L2 norms
@@ -62,7 +62,7 @@ package's API and TransMIL does not override it). We drop it for our
 MIL setting because a 1D depthwise conv over a token sequence with no
 natural ordering is not geometrically meaningful; keeping Nyström pure
 also makes the XSA analysis cleaner. This is a deliberate deviation
-from the official TransMIL import path -- see DESIGN.md §4.0 for the
+from the official TransMIL import path -- see the released protocol for the
 full list of architectural deviations.
 """
 
@@ -100,7 +100,7 @@ def moore_penrose_iter_inv(A: torch.Tensor, iters: int = 6) -> torch.Tensor:
     ||V_0|| implies larger convergence margin).
 
     Earlier versions of this file used per-(batch, head) row/col maxima.
-    The reviewer flagged that as a real numerical discrepancy vs. the
+    The audit flagged that as a real numerical discrepancy vs. the
     official TransMIL dependency path; switching to the global-scalar
     form eliminates it. 6 iterations is the paper's + lucidrains' default.
 
@@ -162,7 +162,7 @@ class NystromXSAAttention(nn.Module):
                         Official TransMIL uses `dim // 2` (= 256 at
                         their dim=512); we use a smaller m as a
                         deliberate deviation for compute economy -- see
-                        DESIGN.md §4.0.
+                        the released protocol
       qkv_bias, attn_drop, proj_drop: same as standard attention
       alpha_cls_mode, alpha_patch_mode: "zero" | "one" | "learn"
       alpha_init:       init value when mode == "learn"
@@ -314,7 +314,7 @@ class NystromXSAAttention(nn.Module):
         # attn_drop applies to the combined attention probabilities. In
         # Nyström the natural place is on F and B (the two "user-side"
         # softmaxes); A is an internal landmark-landmark softmax. For
-        # the PoC we keep drop=0 (default) so this is a no-op unless the
+        # the implementation we keep drop=0 (default) so this is a no-op unless the
         # caller flips it on.
         F_soft = self.attn_drop(F_soft)
         B_soft = self.attn_drop(B_soft)
@@ -377,7 +377,7 @@ class NystromXSAAttention(nn.Module):
                 # APPROXIMATION of the full softmax attention matrix, so
                 # this value is the model's effective self-attention on
                 # CLS under the Nyström approximation, not the "true"
-                # softmax self-attention. See DESIGN.md §4.4.
+                # softmax self-attention. See the released protocol
                 "cls_self_attn": cls_self_attn,
                 "cls_patch_attn": cls_patch_attn,
                 "cos_yv_pre": cos_yv_pre,

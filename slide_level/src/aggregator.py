@@ -1,7 +1,7 @@
 """
 NystromXSAggregator: TransMIL-style MIL aggregator with Nystrom-XSA attention.
 
-Architecture (DESIGN.md §4.1):
+Architecture (the released protocol):
     Input (B, N, 1024) UNI v1 features
       |
       v
@@ -33,7 +33,7 @@ Each TransLayer is a pre-norm transformer block:
     x' = x + DropPath(Attn(LN(x)))
     x'' = x' + DropPath(MLP(LN(x')))
 
-Activation checkpointing (§6.3):
+Activation checkpointing (by design):
     Three modes selected by `checkpoint_mode`:
       "whole_block" (default): one checkpoint boundary per TransLayer
           that wraps (Attn + residual + MLP + residual). Peak memory
@@ -42,7 +42,7 @@ Activation checkpointing (§6.3):
           MLP submodule separately). Lower peak; ~15-20% more recompute.
       "off": no checkpointing. For speed benchmarking / short slides.
 
-Drop-path (§6.4):
+Drop-path (by design):
     Linearly scaled 0 -> drop_path_rate across the `depth` layers,
     standard DeiT/TransMIL recipe. Per-sample mask; no effect in eval.
 
@@ -231,7 +231,7 @@ class NystromXSAggregator(nn.Module):
     """
     Full TransMIL-style slide-level aggregator with Nystrom + XSA.
 
-    Defaults track DESIGN.md §4.2.
+    Defaults track the released protocol
     """
     def __init__(
         self,
@@ -292,7 +292,7 @@ class NystromXSAggregator(nn.Module):
             for i in range(depth)
         ])
 
-        # PPEG after block 1 (DESIGN.md §4.1).
+        # PPEG after block 1 (the released protocol).
         self.ppeg = PPEG(dim=embed_dim)
 
         self.norm = nn.LayerNorm(embed_dim)
@@ -326,7 +326,7 @@ class NystromXSAggregator(nn.Module):
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         """
         features: (B, N, in_dim) raw UNI v1 features for a single slide
-        (B should be 1 at train time per DESIGN.md §6.2).
+        (B should be 1 at train time per the released protocol).
 
         Returns: (B, num_classes) logit tensor.
 

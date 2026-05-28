@@ -4,7 +4,7 @@ Reference TSVs are stored in [results](../results).
 
 ## Classification
 
-[classification_main_table.tsv](../results/classification_main_table.tsv) contains the table values for:
+[classification_main_table.tsv](../results/classification_main_table.tsv) contains mean +/- sample standard deviation over five seeds for:
 
 - CAMELYON16: F1, accuracy, AUC
 - CAMELYON17: F1, accuracy, AUC
@@ -29,3 +29,25 @@ UCEC: delta_scale=1.5, gate_hidden_dim=32
 ```
 
 These are encoded directly in [configs/paper_tcga_survival.tsv](../configs/paper_tcga_survival.tsv).
+
+## Ablations
+
+The latest reported ablation tables are stored as compact TSVs:
+
+- [ablation_fixed_projection.tsv](../results/ablation_fixed_projection.tsv)
+- [ablation_gate_range.tsv](../results/ablation_gate_range.tsv)
+- [ablation_gate_gradients.tsv](../results/ablation_gate_gradients.tsv)
+- [ablation_gate_factorization.tsv](../results/ablation_gate_factorization.tsv)
+- [ablation_gate_initialization.tsv](../results/ablation_gate_initialization.tsv)
+- [ablation_patch_encoder.tsv](../results/ablation_patch_encoder.tsv)
+- [ablation_architecture_choice.tsv](../results/ablation_architecture_choice.tsv)
+
+Their corresponding runnable manifests are:
+
+- [paper_design_ablation.tsv](../configs/paper_design_ablation.tsv)
+- [paper_patch_encoder_ablation.tsv](../configs/paper_patch_encoder_ablation.tsv)
+- [paper_architecture_ablation.tsv](../configs/paper_architecture_ablation.tsv)
+
+ADP in the architecture-choice table uses the official Release1 patch split.
+PANDA in that table uses the dense `vit4` slide model; the main PANDA table uses
+the TransMIL path.

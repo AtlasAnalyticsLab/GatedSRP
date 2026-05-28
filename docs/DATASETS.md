@@ -16,6 +16,7 @@ data/
     panda/train.csv
     panda/train_images/
     bracs/...
+    adp/ADP V1.0 Release/
   labels/
     camelyon17/stages.csv
     bracs/BRACS.xlsx
@@ -27,6 +28,9 @@ data/
     panda/patches/*.h5
     bracs/patches/*.h5
     tcga-to-atlas/A-TCGA-{KIRC,KIRP,LUAD,STAD,UCEC}/40x/uni_v2/20x_256/patches/*.h5
+    kgh/{medsiglip_448,vit_b_16}/patches/*.h5
+    panda/{medsiglip_448,vit_b_16}/patches/*.h5
+    bracs/{medsiglip_448,vit_b_16}/patches/*.h5
 ```
 
 You can use different roots by editing or sourcing [configs/paths.example.env](../configs/paths.example.env).
@@ -41,10 +45,11 @@ You can use different roots by editing or sourcing [configs/paths.example.env](.
 | BRACS | BRACS site: https://www.bracs.icar.cnr.it/ | `BRACS.xlsx`, sheet `WSI_Information`, column `WSI label`. |
 | TCGA survival | NCI GDC Data Portal: https://portal.gdc.cancer.gov/ | OS labels from the matched label CSV described below. |
 | KGH | Local KGH cohort access is required. | Raw folder class names: `CP_HP`, `CP_SSL`, `CP_TA`, `CP_TVA`; normal slides are excluded. |
+| ADP | ADP Release1 data. | `ADP_EncodedLabels_Release1_Flat.csv` with the official train/valid/test split files. |
 
-## Paper Inclusion Rules
+## Inclusion Rules
 
-The code mirrors the paper filtering:
+The code mirrors the reported filtering:
 
 - CAMELYON16: labeled training slides only, tumor vs normal.
 - CAMELYON17: valid labeled training slides only; missing H5 slides are skipped before splitting.
@@ -52,6 +57,23 @@ The code mirrors the paper filtering:
 - PANDA: one zero-patch slide is excluded by H5 validation before split construction.
 - BRACS: WSI-level seven-class labels; slides without H5 features are skipped.
 - TCGA: OS endpoint, non-positive survival times removed, case-level splitting and case-level C-index.
+- ADP: used only for the architecture-choice ablation; it is a raw-RGB
+  patch-level multilabel task, not a slide-level WSI benchmark.
+
+## ADP Layout
+
+Place the extracted ADP Release1 directory at:
+
+```text
+data/raw/adp/ADP V1.0 Release/
+  ADP_EncodedLabels_Release1_Flat.csv
+  img_res_1um_bicubic/*.png
+  splits/{train,valid,test}.npy
+```
+
+Five level-3 labels with zero training positives are pruned by the loader, so
+the ADP ViT emits 38 logits. Override the default paths with `ADP_ROOT`,
+`ADP_CSV`, `ADP_IMG_DIR`, and `ADP_SPLITS_DIR` if your files are elsewhere.
 
 ## TCGA Label CSV
 

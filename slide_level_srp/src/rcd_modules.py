@@ -1,6 +1,6 @@
 """Identity-safe Residual Context Decomposition modules.
 
-These modules implement the post-Phase-A refinement plan without changing
+These modules implement the post-signed-gate refinement plan without changing
 the existing SRP or signed-gate paths.  They are intentionally small and
 zero-output-initialized so a newly enabled RCD arm starts from the same
 attention output as the original model and must learn any intervention.

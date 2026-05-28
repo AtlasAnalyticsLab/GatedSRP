@@ -8,7 +8,7 @@ Differences vs. stage-2 NystromXSAggregator:
       every block identically; h_morph is unused by non-gated ablations
       but carried along to keep the forward signature uniform.
 
-  (2) The square-pad step builds is_real on the fly. Per proposal §12.2,
+  (2) The square-pad step builds is_real on the fly. Per the released protocol,
       is_real is True at positions 1..N (real patches) and False at
       position 0 (CLS) and positions 1+N..H*W (pad duplicates).
       neighbor_index / neighbor_mask stay sized to real patches only
@@ -22,9 +22,9 @@ Differences vs. stage-2 NystromXSAggregator:
 
 All other stage-2 design choices (drop-path linear schedule, 4 TransLayers
 with PPEG inserted after block 1, LayerNorm head on CLS, etc.) are
-preserved verbatim — see slide_level/DESIGN.md §4.
+preserved verbatim — see the slide-level baseline implementation
 
-Activation checkpointing (§6.3): identical semantics to stage 2. The
+Activation checkpointing (by design): identical semantics to stage 2. The
 checkpointed callable now closes over the extra tensors automatically
 because cp.checkpoint wraps a function not a (tensor,) tuple.
 """
@@ -39,7 +39,7 @@ import torch.nn as nn
 import torch.utils.checkpoint as cp
 
 # Import unchanged stage-2 pieces directly; this keeps stage 2 as the
-# single source of truth and prevents drift. See proposal §12.1's
+# single source of truth and prevents drift. See the released protocol's
 # "imports vs. copies" convention.
 from slide_level.src.ppeg import PPEG
 from slide_level.src.aggregator import DropPath, Mlp
@@ -329,7 +329,7 @@ class NystromSRPAggregator(nn.Module):
 
     The forward now takes `neighbor_index`, `neighbor_mask`, and optional
     `h_morph` in addition to `features`. The aggregator constructs
-    `is_real` internally during the square-pad step, per proposal §12.2.
+    `is_real` internally during the square-pad step, by design
 
     Beta / SRP parameters (all forwarded to every block):
       beta_patch_mode: "zero" | "one" | "learn"
@@ -358,7 +358,7 @@ class NystromSRPAggregator(nn.Module):
         layerscale_init: float = 0.0,
         ln_specialization: str = "shared",
         ln_specialization_scope: str = "block",
-        # Signed-gate options (proposal §2). Only consumed under
+        # Signed-gate options (by design). Only consumed under
         # srp_mode == "post_agg_signed_gated" + beta_patch_mode == "signed_gated".
         delta_scale: float = 2.0,
         gate_hidden_dim: int = 16,
@@ -375,7 +375,7 @@ class NystromSRPAggregator(nn.Module):
         rcd_adapter_kind: str = "lowrank",
         rcd_rank: int = 16,
         learned_r_hidden_dim: int = 16,
-        # Phase-A.9 PPEG-removal ablation (REPORT.md §17.2). Removes the
+        # validation PPEG-removal ablation (the reported ablation). Removes the
         # PPEG conv-position-mixing layer between blocks 0 and 1 to test
         # the architectural-mediation hypothesis: does the δ=2 reflection
         # advantage on TransMIL require PPEG, or does it survive without?
@@ -458,7 +458,7 @@ class NystromSRPAggregator(nn.Module):
         ])
 
         # PPEG: enabled by default (TransMIL-faithful). Replaced with
-        # nn.Identity under the §17.2 ablation. See forward() for the
+        # nn.Identity under the released protocol ablation. See forward() for the
         # corresponding reshape skip.
         self.ppeg = PPEG(dim=embed_dim) if self.use_ppeg else nn.Identity()
         final_ln_specialization = (
@@ -532,7 +532,7 @@ class NystromSRPAggregator(nn.Module):
         neighbor_mask      True at valid neighbor slots (False for -1 or self)
         h_morph            frozen-UNI-derived slide-intrinsic homogeneity; required
                            for srp_mode='post_agg_gated', ignored otherwise
-        h_local            per-patch cosine-homogeneity (proposal §6.2);
+        h_local            per-patch cosine-homogeneity (by design);
                            required for srp_mode='post_agg_signed_gated'.
                            Distinct from h_morph (Sobel-based) — both are
                            token-level homogeneity signals but compute
@@ -544,7 +544,7 @@ class NystromSRPAggregator(nn.Module):
         B, N, _ = features.shape
         device = features.device
 
-        # Phase-A.9 second-review fix F7: runtime input-contract checks
+        # Validation: runtime input-contract checks
         # raise ValueError so they survive `python -O`.
         if neighbor_index.ndim != 3 or neighbor_index.shape[:2] != (B, N):
             raise ValueError(
@@ -600,7 +600,7 @@ class NystromSRPAggregator(nn.Module):
         L = 1 + HW
 
         # Build is_real: True at positions 1..N; False at position 0 (CLS)
-        # and positions 1+N..L-1 (pad duplicates). Proposal §12.2.
+        # and positions 1+N..L-1 (pad duplicates).
         is_real = torch.zeros(B, L, device=device, dtype=torch.bool)
         if N > 0:
             is_real[:, 1 : 1 + N] = True
@@ -611,7 +611,7 @@ class NystromSRPAggregator(nn.Module):
             neighbor_weight,
         )
         # PPEG sees the full (B, 1+HW, D) sequence. CLS stays at position 0.
-        # Under the §17.2 PPEG-removal ablation (self.use_ppeg=False),
+        # Under the released protocol PPEG-removal ablation (self.use_ppeg=False),
         # self.ppeg is nn.Identity which ignores the (H, W) shape args;
         # we route around the call entirely so we don't need to forward
         # spatial dims to Identity.

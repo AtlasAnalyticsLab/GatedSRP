@@ -16,7 +16,7 @@ What we verify:
   test_F   reproducing fixed beta via raw_init: when the layer_head_bias
            is set to arctanh(beta / delta_scale), the gate produces a
            constant beta_eff equal to the requested fixed beta. This
-           verifies the §2.3 ablation recipe for non-zero init.
+           verifies the non-zero-initialization ablation recipe.
 
 These tests are pure-PyTorch and do not require GPU. Run with:
 
@@ -73,7 +73,7 @@ def test_A_forward_shape() -> None:
 def test_B_identity_init_beta_zero() -> None:
     """At construction, beta_eff must be exactly 0 for every (b, h, n).
 
-    This verifies the proposal §2.3 invariant that raw_init = 0
+    This verifies the identity-initialization invariant that raw_init = 0
     produces beta_eff = 0, so the SRP correction vanishes and the
     model starts as the un-projected baseline.
     """
@@ -203,7 +203,7 @@ def test_F_fixed_beta_via_raw_init() -> None:
     on every head should produce a constant beta_eff equal to
     beta_target across all (b, h, n).
 
-    This verifies the §2.3 ablation recipe for non-zero init.
+    This verifies the non-zero-initialization ablation recipe.
     """
     delta_scale = 2.0
     beta_target = 1.0

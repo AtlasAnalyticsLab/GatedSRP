@@ -1,7 +1,7 @@
 """
 Unit tests for NystromSRPAttention.
 
-Covers (proposal §12.7):
+Covers (by design):
   A   beta=zero is identity at the patch rows (z == y everywhere)
   B   beta=1 orthogonalizes z vs r at patch rows
   C   CLS row unchanged under every srp_mode (direct projection no-op)
@@ -137,15 +137,15 @@ def test_B_beta_one_orthogonalizes_z_vs_r():
 
 def test_C_cls_row_never_projected():
     """CLS row (position 0) receives no DIRECT SRP projection under any
-    mode. The correct invariant per proposal §12.7 is the internal
+    mode. The correct invariant by design is the internal
     per-forward equality:
 
         z_cls == y_cls   (inside a single forward pass)
 
     NOT cross-ablation equality: under pre_v, CLS's output legitimately
     differs from baseline because CLS attends over modified patch values
-    (proposal §2.5, §14.4 — "CLS inherits SRP's effect indirectly
-    through modified patch outputs"). Checking z_cls(β=1) == z_cls(β=0)
+    (by design: CLS inherits SRP's effect indirectly through modified
+    patch outputs). Checking z_cls(β=1) == z_cls(β=0)
     therefore fails by design on pre_v, not because of a bug.
 
     We verify the correct invariant by reading the raw y_cls and z_cls
@@ -153,8 +153,8 @@ def test_C_cls_row_never_projected():
     for this test.
 
     Full element-wise vector comparison (not just L2 norms) addresses
-    review-round-1 "Low: CLS/pad tests compare norms rather than vectors".
-    Non-state_dict-based reference-module setup addresses review-round-2
+    audit-round-1 "Low: CLS/pad tests compare norms rather than vectors".
+    Non-state_dict-based reference-module setup addresses audit-round-2
     "Medium: load_state_dict overwrites beta_patch=0".
     """
     torch.manual_seed(3)
@@ -313,11 +313,11 @@ def test_D_pad_duplicates_not_projected():
     at pad positions is bit-identical between β=0 and β=1 (only the
     clone-and-update of y at the PATCH slice changes with β). We verify
     full element-wise equality at pad positions — not just L2 norms —
-    addressing review-round-1 "Low: CLS/pad tests compare norms rather
+    addressing audit-round-1 "Low: CLS/pad tests compare norms rather
     than vectors".
 
     Seed-synchronized construction (not load_state_dict) ensures the
-    β=0 reference actually has β=0 — addresses review-round-2 Medium 3.
+    β=0 reference actually has β=0 — addresses audit-round-2 Medium 3.
     """
     torch.manual_seed(4)
     B, N, C = 1, 20, 192
@@ -374,7 +374,7 @@ def test_D_pad_duplicates_not_projected():
 
 def test_E_prev_instance_weeding():
     """Under pre_v with β̃=1 and v_j == r_j (perfectly homogeneous
-    neighborhood), v'_j must be ~ 0 per proposal §2.5.
+    neighborhood), v'_j must be ~ 0 by design
 
     We construct this by making all the input features identical on the
     patch rows — then Q/K/V projections produce identical v_j across
@@ -410,7 +410,7 @@ def test_F_detach_blocks_gradient_through_neighbors():
     the projection term `(v_j · r̂_j) · r̂_j` back through the neighbors
     v_k that r_j was built from.
 
-    Strengthened per review: we use torch.autograd.grad to construct
+    Strengthened per audit: we use torch.autograd.grad to construct
     an explicit test. Let L = sum of the pre_v-modified v at patch j
     ONLY, i.e. L = v'_j.sum(). By design:
         v'_j = v_j - β̃ · (v_j · r̂_j) · r̂_j
@@ -492,7 +492,7 @@ def test_F_detach_blocks_gradient_through_neighbors():
 
     # dL/dv[:, :, k, :] for k ∈ N(j) should ALSO be zero under the detach
     # policy: r_j uses detached v_k, so v'_j has no gradient dependence
-    # on v_k either. This is the stronger condition the reviewer asked
+    # on v_k either. This is the stronger condition the validation check asked
     # for — we're not just checking "gradients finite", we're checking
     # "the exact path we claim to have cut is actually cut."
     for k in sorted(neigh_of_j):
@@ -572,7 +572,7 @@ def test_I_baseline_beta_zero_matches_xsa_alpha_zero():
 
     We seed both modules identically and verify their outputs on a common
     input agree to bf32 precision. This secures the "no drift between
-    stage-2 and stage-3 baseline" guarantee (proposal §13.5).
+    stage-2 and slide-level SRP baseline" guarantee (by design).
     """
     torch.manual_seed(9)
     B, N, C = 1, 40, 192

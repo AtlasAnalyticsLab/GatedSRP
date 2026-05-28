@@ -1,5 +1,5 @@
 """
-Per-layer CLS and Nystrom-XSA attention diagnostics for the slide-level PoC.
+Per-layer CLS and Nystrom-XSA attention diagnostics for the slide-level implementation.
 
 Ported from stage-1 src/diagnostics.py. The semantics, per-example
 averaging scheme, and W&B-facing output dict are identical; only two
@@ -9,7 +9,7 @@ things change at stage 2:
       (precomputed inside Nystrom-XSA) instead of being extracted from an
       attn_probs tensor. Nystrom never materializes the full attention
       matrix, so precomputing just the (CLS, CLS) entry in the attention
-      module is the only tractable option at slide scale (DESIGN.md §4.4).
+      module is the only tractable option at slide scale (the released protocol).
 
   (2) The class-name string used for attention-module discovery is
       "NystromXSAAttention" instead of "XSAAttention".

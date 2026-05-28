@@ -62,7 +62,7 @@ UNI_DIM = 1536
 # each axis. Verified on representative slides 2026-04-25.
 PANDA_PATCH_STRIDE_L0 = 256
 
-# 8-neighbour graph builder is shared with Stage-3 CAMELYON17 SRP. Both
+# 8-neighbour graph builder is shared with slide-level SRP CAMELYON17 SRP. Both
 # stages' H5s store level-0 pixel coords with a fixed stride, so the
 # only PANDA-specific bit is the stride value (256 vs CAM17's 512) and
 # the column slice (PANDA's coords are (N, 5); we keep the first two as
@@ -78,11 +78,11 @@ def build_panda_neighbor_index(
     stride: int = PANDA_PATCH_STRIDE_L0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Thin PANDA-specific wrapper around the Stage-3 builder. Slices the
+    Thin PANDA-specific wrapper around the slide-level SRP builder. Slices the
     first two columns of the (N, 5) PANDA H5 coords, then delegates.
     Returns (neighbor_index: (N, 8) int64, neighbor_mask: (N, 8) bool).
     """
-    # Phase-A.9 fourth-review fix F4: data-shape contract must raise
+    # Validation: data-shape contract must raise
     # ValueError so it survives `python -O`. A wrongly-shaped coords
     # array would silently produce garbage neighbours otherwise.
     if coords.ndim != 2 or coords.shape[1] < 2:
@@ -134,7 +134,7 @@ def _compute_h_local(
     vectors. Returned shape (N,), dtype float32.
 
     h_local serves as a per-token diagnostic input to the signed
-    learned gate (LEARNED_GATE_SRP_PROPOSAL.md §6.2). It is intrinsic
+    learned gate (the signed-gate design). It is intrinsic
     to the frozen patch embeddings, so it is computed once per slide
     here rather than at every transformer block.
 
@@ -299,7 +299,7 @@ def build_panda_folds(
     a list of length n_folds, each containing record indices.
 
     The two providers (karolinska, radboud) score very differently
-    (DESIGN §2.2), so naive random splits leak provider as a label
+    (reported configuration), so naive random splits leak provider as a label
     predictor. Here we stratify on the joint to neutralize that.
 
     Determinism: fold assignment depends only on (record order, fold_seed)
@@ -416,7 +416,7 @@ class PandaSlideDataset(Dataset):
     """
     Native-length variable-N slide dataset. No caps, no subsampling, no
     train/eval policy difference. Used with batch_size=1 + gradient
-    accumulation (mirroring the CAMELYON17 / Stage-3 protocol), so the
+    accumulation (mirroring the CAMELYON17 / slide-level SRP protocol), so the
     dataset returns each slide at its actual patch count and the
     trainer handles effective-batch-size via grad_accum.
 
@@ -452,13 +452,9 @@ class PandaSlideDataset(Dataset):
         self.neighbor_shuffle_seed = int(neighbor_shuffle_seed)
         self.neighbor_weighting = neighbor_weighting
         self.neighbor_weight_sigma = float(neighbor_weight_sigma)
-        # Optional safety cap. Phase-A.9 review fix F7: previously, caps
-        # below 4096 were *silently* ignored, masking the
-        # tools/panda_stress_test.py "BS=16 / N_max=1024" advertised
-        # protocol. Now we honour any explicit positive cap and emit
-        # a warning so the user knows the cap is active. PANDA's p100
-        # at native length is 2686, so caps below that DO truncate; that
-        # is now the user's choice rather than a silent no-op.
+        # Optional safety cap. Any explicit positive cap is honoured and
+        # reported so the user knows truncation is active. PANDA's p100 at
+        # native length is 2686, so caps below that do truncate by request.
         if n_max is not None and n_max > 0:
             self._safety_cap = n_max
             if n_max < 4096:
@@ -467,7 +463,7 @@ class PandaSlideDataset(Dataset):
                     f"PandaSlideDataset: applying n_max={n_max} below the "
                     f"4096-slide safety threshold; this WILL truncate slides "
                     f"with n_real > {n_max} (PANDA p100=2686 at native "
-                    f"length). Pre-Phase-A.9, caps < 4096 were silently "
+                    f"length). Pre-validation, caps < 4096 were silently "
                     f"ignored — the new behaviour honours the cap exactly.",
                     UserWarning,
                 )
@@ -548,8 +544,8 @@ class PandaSlideDataset(Dataset):
 
         # h_local: per-patch local homogeneity, mean cosine similarity
         # with valid 8-neighbours. Used as a per-token gate input under
-        # the signed-gate SRP variant (LEARNED_GATE_SRP_PROPOSAL.md
-        # §6.2). Computed once per slide here; cheap (≈ 6 M flops on a
+        # the signed-gate SRP variant (the signed-gate design
+        # by design). Computed once per slide here; cheap (≈ 6 M flops on a
         # median ~500-patch slide) and freezes a stable signal that
         # downstream blocks all consume. h_local is intrinsic to the
         # raw input features — it does not depend on layer or training
@@ -584,7 +580,7 @@ def panda_collate(batch: List[Dict]) -> Dict:
     to max-in-batch which we deliberately avoid (DESIGN: train and eval
     at native N for parity with CAM17 protocol).
     """
-    # Phase-A.9 review fix F9: runtime data-contract validation should
+    # Validation: runtime data-contract validation should
     # be a real exception (kept under `python -O`), not an assert.
     if len(batch) != 1:
         raise ValueError(
@@ -615,12 +611,10 @@ def build_panda_loaders(
     *,
     num_workers: int = 4,
     safety_cap: int | None = None,
-    # Legacy kwargs — kept for back-compat with stress tests / older
-    # callers. `batch_size` is ignored (the BS=1 + grad_accum CAM17-style
-    # protocol forces 1). `n_max`, on the other hand, was previously
-    # silently dropped (Phase-A.9 second-review fix F5); it now maps
-    # to `safety_cap` if `safety_cap` is None, so the legacy stress
-    # tool's `--n_max 1024` actually has the documented effect.
+    # Legacy kwargs are kept for back-compat with older callers. `batch_size`
+    # is ignored because the BS=1 + grad_accum protocol forces one slide per
+    # step. `n_max` maps to `safety_cap` when `safety_cap` is None, preserving
+    # the intended explicit-token-cap behavior.
     batch_size: int = 1,
     n_max: int | None = None,
     neighbor_radius: int = 1,
@@ -635,7 +629,7 @@ def build_panda_loaders(
     """
     Build PANDA DataLoaders.
 
-    Phase-A.9 review fix F1: when `test_idx` is provided, returns a
+    Validation: when `test_idx` is provided, returns a
     3-tuple (train, val, test) with all three loaders. The trainer
     selects `best.pt` on `val_loader` and reports final metrics on the
     untouched `test_loader`. Backward-compat: when `test_idx is None`,
@@ -647,7 +641,7 @@ def build_panda_loaders(
     gradient accumulation.
     """
     # F5 fix: honour the legacy `n_max` kwarg as a fallback when no
-    # explicit `safety_cap` was given. Pre-fix this kwarg was accepted
+    # explicit `safety_cap` was given. Previously this kwarg was accepted
     # but silently ignored.
     effective_cap = safety_cap if safety_cap is not None else n_max
     train_records = [records[i] for i in train_idx]

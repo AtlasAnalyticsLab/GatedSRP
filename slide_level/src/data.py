@@ -1,5 +1,5 @@
 """
-Slide-level dataset + fold assignment for CAMELYON17 (stage 2 of the XSA PoC).
+Slide-level dataset + fold assignment for CAMELYON17 (stage 2 of the XSA implementation).
 
 Data layout on disk:
   data/labels/camelyon17/stages.csv
@@ -13,15 +13,14 @@ Data layout on disk:
   data/features/camelyon17_uni_v1/
       499 h5 files, one per slide. Filename pattern
       `patient_XXX_node_Y.h5`. The CSV lists 500 slides; one is missing
-      features and gets silently skipped (see README inspection in
-      DESIGN.md §3.1).
+      features and gets skipped by the released loader protocol.
 
 Each h5 file has:
   /features  (N, 1024) fp32   -- UNI v1 ViT-L/14 pooled patch features
   /coords    (N, 2)   int64   -- level-0 pixel coordinates at 40x,
                                  stride 512 per patch
 
-Task in this stage (§3.3):
+Task:
   Default is 4-class: {negative: 0, itc: 1, micro: 2, macro: 3}.
   Binary (y = 0 if stage == "negative" else 1) is still supported via
   num_classes=2 for backwards comparability with pilot runs.
@@ -32,16 +31,15 @@ Task in this stage (§3.3):
   separation. The 4-way split reintroduces the detection difficulty
   (itc is tiny tumor regions; micro is moderate; macro is obvious).
 
-Split design (§3.4):
+Split design:
   5-fold patient-grouped, center-stratified CV. fold_seed=0 fixed.
   For each outer fold k (= test fold), the remaining 80 patients are
   deterministically split into 70 train + 10 val. val_patients_per_fold
   defaults to 10 so the val draw is exactly 2 patients per center on
   CAM17's 5-center grid. Fold assignments are identical across
-  ablations -- this is essential for the per-slide paired comparison in
-  §8.3.
+  ablations -- this is essential for the released paired per-slide comparison.
 
-Sequence-length handling (§6.3):
+Sequence-length handling:
   Training, val, and test are all uncapped by default. A hard safety
   ceiling `N_max_safety = 49152` triggers deterministic coord-sorted
   subsampling only for anomalous slides (no current slide exceeds it).
@@ -67,7 +65,7 @@ from torch.utils.data import DataLoader, Dataset
 
 # --- constants and filename parsing --------------------------------------
 
-# Canonical stage-to-label mappings. §3.3 of DESIGN.md.
+# Canonical stage-to-label mappings. the released protocol.
 # 4-class is the default; binary is kept for ad-hoc comparisons only.
 _NEGATIVE_STAGE = "negative"
 _VALID_STAGES = {"negative", "itc", "micro", "macro"}
@@ -94,7 +92,7 @@ _SLIDE_ROW_RE = re.compile(r"^(patient_\d{3})_node_(\d)\.tif$")
 
 # Safety ceiling: hard upper bound on the per-slide token count. No
 # current slide exceeds p100 = 37666, so this is defense against data
-# drift only. See §6.3.
+# drift only.
 N_MAX_SAFETY = 49152
 
 
@@ -161,7 +159,7 @@ def enumerate_slides(
 ) -> List[SlideRecord]:
     """
     Join stages.csv with the on-disk h5 inventory. Slides listed in the
-    CSV but missing an h5 are silently dropped (matches DESIGN.md §3.1:
+    CSV but missing an h5 are silently dropped (matches the released protocol:
     500 listed, 499 with features; one patient_027_node_1 is missing).
 
     num_classes=4 (default) -> labels in {0: negative, 1: itc, 2: micro, 3: macro}.
@@ -274,7 +272,7 @@ def _select_val_patients(
         by_center.setdefault(c, []).append(p)
     centers = sorted(by_center.keys())
     n_c = len(centers)
-    # Phase-A.9 fourth-review fix F4: split-budget validation must raise
+    # Validation: split-budget validation must raise
     # ValueError so it survives `python -O`. Otherwise an over-large val_n
     # would silently slice past the pool and yield a misshaped split.
     pool_size = sum(len(v) for v in by_center.values())
@@ -327,7 +325,7 @@ def build_fold_assignments(
     patient_center: Dict[str, int] = {}
     for r in records:
         if r.patient_id in patient_center:
-            # Phase-A.9 fourth-review fix F4: data-integrity check must
+            # Validation: data-integrity check must
             # raise ValueError so it survives `python -O`. A patient with
             # inconsistent centers indicates corrupted metadata that
             # would silently produce wrong stratification.
@@ -346,7 +344,7 @@ def build_fold_assignments(
     )
     # Sanity: every patient assigned exactly once.
     flat = [p for f in all_folds for p in f]
-    # Phase-A.9 fourth-review fix F4: clean-cover invariant must raise
+    # Validation: clean-cover invariant must raise
     # ValueError (RuntimeError-class) so it survives `python -O`. A
     # broken cover means leakage between folds — silent dataset bug.
     if not (len(flat) == len(patient_center) == len(set(flat))):
@@ -449,7 +447,7 @@ def _deterministic_subsample(
     in a stable spatial order, then take cap evenly-spaced indices. No
     RNG -- same output every call for a given (feats, coords).
     """
-    # Phase-A.9 third-review fix F6: runtime data contract → ValueError.
+    # Validation: runtime data contract → ValueError.
     if feats.shape[0] != coords.shape[0]:
         raise ValueError(
             f"feats and coords disagree on N: {feats.shape[0]} vs {coords.shape[0]}"
@@ -473,13 +471,13 @@ def slide_collate(batch: List[Dict]) -> Dict:
     treat them per-slide. Scalars are stacked normally.
 
     This assumes batch_size=1; multi-slide batching would require padding
-    + masks, which we explicitly avoid (§6.2).
+    + masks, which we explicitly avoid (by design).
     """
-    # Phase-A.9 third-review fix F6: runtime collate contract → ValueError.
+    # Validation: runtime collate contract → ValueError.
     if len(batch) != 1:
         raise ValueError(
             f"slide_collate expects batch_size=1 (got {len(batch)}); "
-            "see DESIGN.md §6.2 for rationale."
+            "see the single-slide batching rationale."
         )
     b = batch[0]
     return {
@@ -516,18 +514,18 @@ def build_loaders_for_fold(
     """
     Build (train, val, test) DataLoaders for a specific CV fold.
 
-    Per-split caps (DESIGN.md §6.3 tiered fallback):
+    Per-split caps (the released protocol tiered fallback):
       - Primary tier:     all caps = None -> N_MAX_SAFETY hard ceiling only
       - Fallback 2:       train_cap = 32768,  val/test = None (uncapped)
       - Fallback 3:       train_cap = val_cap = 16384, test_cap = None
-    (Fallback 1 is a checkpointing change, not a cap change; see §6.3.)
+    (Fallback 1 is a checkpointing change, not a cap change.)
 
     None means "no per-split cap beyond the safety ceiling". Any explicit
     cap is combined with N_MAX_SAFETY via min() so the ceiling is never
     exceeded regardless of caller input.
 
     batch_size is hard-coded to 1; the training loop handles effective
-    batching via gradient accumulation (see DESIGN.md §6.2).
+    batching via gradient accumulation (see the released protocol).
     """
     tr_cap = _effective_cap(train_cap)
     va_cap = _effective_cap(val_cap)

@@ -69,7 +69,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
       y/v/z_norm_patch           (D, H)           count = B * N_real
       z_over_y_cls/patch         (D, H)           count = B * (n_cls|N_real)
 
-      # SRP-specific (§8.2.A, B, D).
+      # SRP-specific (B, D).
       cos_yr_patch_pre/post      (D, H)           count = B * N_real
       h_V_patch                  (D, H)           count = B * N_real
       cos_vr_patch_pre/post      (D, H)           count = B * N_real  (pre_v only)
@@ -77,7 +77,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
       h_morph_patch              (D,)             count = B * N_real  (gated only)
 
     Patch-slice counts use N_real — pad duplicates are NOT included
-    (proposal §12.2 rule 4). n_cls = num_cls_tokens.
+    (diagnostic rule 4). n_cls = num_cls_tokens.
     """
     out: Dict[str, _Sample] = {}
 
@@ -147,7 +147,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
         z_norm = stats["z_norm"].float()
         # Slice roles: CLS is positions [0 : n_cls]; patch is positions
         # [n_cls : n_cls + N_real]. Pad duplicates (positions after) are
-        # NOT included — proposal §12.2 rule 4.
+        # NOT included — diagnostic rule 4.
         push("y_norm_cls",   y_norm[:, :, :n_cls].sum(dim=(0, 2)))
         push("v_norm_cls",   v_norm[:, :, :n_cls].sum(dim=(0, 2)))
         push("z_norm_cls",   z_norm[:, :, :n_cls].sum(dim=(0, 2)))
@@ -160,7 +160,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
         push("z_over_y_cls",   z_over_y_full[:, :, :n_cls].sum(dim=(0, 2)))
         push("z_over_y_patch", z_over_y_full[:, :, n_cls : n_cls + N_real].sum(dim=(0, 2)))
 
-        # SRP-specific (§8.2.A, B).
+        # SRP-specific (B).
         cos_yr_pre = stats["cos_yr_patch_pre"].float()
         cos_zr_post = stats["cos_zr_patch_post"].float()
         h_V = stats["h_V_patch"].float()
@@ -168,7 +168,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
         push("cos_yr_patch_post", cos_zr_post.sum(dim=(0, 2)))
         push("h_V_patch",         h_V.sum(dim=(0, 2)))
 
-        # §8.2.E placement signature (per-slide, so per-example count).
+        # diagnostic placement signature (per-slide, so per-example count).
         cos_y_cls_rbar = stats["cos_y_cls_rbar"].float()        # (B, H)
         push("cos_y_cls_rbar", cos_y_cls_rbar.sum(dim=0))
 
@@ -179,7 +179,7 @@ def extract_batch_stats(model: torch.nn.Module) -> Dict[str, _Sample]:
                 optional_present[key] = True
                 push(key, val.float().sum(dim=(0, 2)))
 
-        # §8.2.D3 attention-weighted retention (pre_v only; per-example).
+        # diagnostic attention-weighted retention (pre_v only; per-example).
         bar_rho_cls = stats.get("bar_rho_cls")
         if bar_rho_cls is not None:
             optional_present["bar_rho_cls"] = True
@@ -315,9 +315,9 @@ def extract_per_slide_diagnostics(model: torch.nn.Module) -> Dict[str, torch.Ten
     stream per-slide records to disk without collapsing distributional
     information across slides. Returns, per layer:
 
-      cos_y_cls_rbar:  (D, H)   -- §8.2.E placement signature
+      cos_y_cls_rbar:  (D, H)   -- diagnostic placement signature
       mean_h_V:        (D, H)   -- V-space neighborhood coherence
-      bar_rho_cls:     (D, H)   -- §8.2.D3 attention-weighted retention
+      bar_rho_cls:     (D, H)   -- diagnostic attention-weighted retention
                                    (only populated under pre_v)
       mean_cos_yr_pre: (D, H)   -- cos(y, r̂) before projection (patch avg)
       mean_cos_yr_post:(D, H)   -- cos(z, r̂) after projection (patch avg)
@@ -385,7 +385,7 @@ def compute_z_over_y_by_h_morph_quartile(
     (0 = lowest, 3 = highest), at layer l head h.
 
     Bins are computed per-slide (not globally), which is what we want:
-    the §8.2.C diagnostic asks whether z_over_y decreases with LOCAL
+    This diagnostic asks whether z_over_y decreases with local
     homogeneity relative to the slide's own distribution. Global
     quartiles would mix slide-intrinsic heterogeneity with cross-slide
     heterogeneity.

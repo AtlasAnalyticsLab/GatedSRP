@@ -1,6 +1,9 @@
 # Embeddings
 
-All paper runs use frozen 20x, 256-pixel AtlasPatch UNI-v2 patch embeddings. The trainers consume one H5 file per WSI.
+The main WSI runs use frozen 20x, 256-pixel AtlasPatch UNI-v2 patch
+embeddings. The patch-encoder ablation also uses MedSigLIP-448 and ViT-B/16
+features in the same one-H5-file-per-WSI format. ADP is the exception: it
+loads raw RGB patch PNGs directly.
 
 ## H5 Contract
 
@@ -50,3 +53,19 @@ export CAM17_UNIV2_ROOT=data/features/camelyon17/patches
 | TCGA | `TCGA_FEATURE_ROOT=data/features/tcga-to-atlas`; the trainer adds `A-TCGA-{cohort}/40x/uni_v2/20x_256/patches`. |
 
 If your extraction tool writes a different key, either normalize to `/features/uni_v2` or set the matching `*_FEATURE_KEY` variable and keep `--in_dim 1536`.
+
+## Patch-Encoder Ablation Keys
+
+The patch-encoder manifest expects the following feature dimensions and H5
+keys:
+
+| Encoder | H5 key | `--in_dim` |
+|---|---|---:|
+| UNI-v2 | `features/uni_v2` | 1536 |
+| MedSigLIP-448 | `features/medsiglip` | 1152 |
+| ViT-B/16 | `features/vit_b_16` | 768 |
+
+For KGH, PANDA, and BRACS, point the corresponding root variables in
+`configs/paths.example.env` at the encoder-specific `patches/` directory. For
+TCGA, keep the same `TCGA_FEATURE_ROOT` tree and set the encoder-specific
+feature key variables if your H5 key names differ.
