@@ -32,7 +32,7 @@ KGH_FEATURE_ROOT = os.environ.get(
     "data/features/kgh/patches",
 )
 KGH_RAW_ROOT = os.environ.get("KGH_RAW_ROOT", "data/raw/kgh")
-KGH_LABEL_CSV = os.environ.get("KGH_LABEL_CSV", "data/labels/kgh/slides.csv")
+KGH_LABEL_CSV = os.environ.get("KGH_LABEL_CSV", "")
 KGH_FEATURE_KEY = os.environ.get("KGH_FEATURE_KEY", "features/uni_v2")
 KGH_DIM = 1536
 KGH_CLASSES = ["CP_HP", "CP_SSL", "CP_TA", "CP_TVA"]
@@ -62,16 +62,16 @@ def enumerate_kgh_slides(
 ) -> List[KGHSlideRecord]:
     """Join KGH labels with extracted UNI-v2 feature H5s.
 
-    The release path uses ``data/labels/kgh/slides.csv`` so labels are explicit
-    and reproducible without relying on local class-folder names.  When that
-    manifest is absent, the loader falls back to the historical raw-folder
-    layout to keep private/local runs usable.
+    KGH is a private cohort, so no KGH label manifest is distributed with this
+    repository.  By default labels come from the private raw class-folder
+    layout.  Local users may set ``KGH_LABEL_CSV`` to a private manifest outside
+    the repository if their storage layout is not class-folder based.
     """
     h5_root = Path(feature_root)
     if not h5_root.is_dir():
         raise FileNotFoundError(f"missing KGH feature dir: {h5_root}")
-    label_path = Path(label_csv)
-    if label_path.exists():
+    label_path = Path(label_csv) if label_csv else None
+    if label_path is not None and label_path.exists():
         return _enumerate_kgh_from_label_csv(label_path, h5_root)
 
     raw = Path(raw_root)
@@ -102,7 +102,7 @@ def enumerate_kgh_slides(
 
 
 def _enumerate_kgh_from_label_csv(label_path: Path, h5_root: Path) -> List[KGHSlideRecord]:
-    """Read the released KGH slide-label manifest and join it to H5 files."""
+    """Read a private KGH slide-label manifest and join it to H5 files."""
     out: list[KGHSlideRecord] = []
     seen: set[str] = set()
     class_to_id = {name: idx for idx, name in enumerate(KGH_CLASSES)}

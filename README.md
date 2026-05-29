@@ -50,6 +50,7 @@ as the original attention layer.
 | Understand the mechanism | [docs/METHOD.md](docs/METHOD.md) |
 | Add Gated SRP to another transformer | [docs/INTEGRATION.md](docs/INTEGRATION.md) |
 | Reproduce the reported tables | [docs/REPRODUCING.md](docs/REPRODUCING.md) |
+| Understand checkpoint policy | [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md) |
 | Prepare datasets and labels | [docs/DATASETS.md](docs/DATASETS.md) |
 | Extract or validate H5 patch embeddings | [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) |
 | Inspect reference numbers | [docs/RESULTS.md](docs/RESULTS.md) |
@@ -109,11 +110,13 @@ For CPU-only smoke tests, install the CPU PyTorch wheel instead.
 ## First Smoke Test
 
 Prepare datasets and frozen H5 embeddings as described in
-[docs/DATASETS.md](docs/DATASETS.md) and [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md),
-then set local paths:
+[docs/DATASETS.md](docs/DATASETS.md) and [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md).
+The raw slides and H5 files can live outside this repository; copy the example
+path file and set absolute paths for your server:
 
 ```bash
-source configs/paths.example.env
+cp configs/paths.example.env .env.local
+source .env.local
 ```
 
 Preview one command without launching training:
@@ -129,6 +132,9 @@ Run the lightweight tests:
 python -m pytest tests -q
 ```
 
+Pretrained checkpoints are not bundled; the manifests regenerate `best.pt`
+artifacts locally. See [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
+
 Label metadata used by the released manifests is checked in under
 [data/labels](data/labels). To populate the H5 features from raw WSIs, install
 AtlasPatch and run the dataset-aware launcher, for example:
@@ -138,8 +144,20 @@ python -m pip install atlas-patch
 python -m pip install git+https://github.com/facebookresearch/sam2.git
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset camelyon17 \
-  --input data/raw/camelyon17/images \
-  --output data/features/camelyon17
+  --input "${CAM17_RAW_ROOT:-data/raw/camelyon17/images}" \
+  --output "$(dirname "${CAM17_UNIV2_ROOT:-data/features/camelyon17/patches}")"
+```
+
+For TCGA survival, generate the GDC manifest from the checked-in label CSV and
+download the exact SVS slides before feature extraction. If you already have
+the slides on shared storage, set `TCGA_EXISTING_SLIDE_DIRS` to stage symlinks
+instead of downloading again:
+
+```bash
+bash scripts/download_tcga_slides.sh
+
+# Or stage existing GDC slides without downloading again:
+TCGA_EXISTING_SLIDE_DIRS=/shared/gdc/tcga-slides bash scripts/download_tcga_slides.sh
 ```
 
 ## Use Gated SRP in Your Own Model

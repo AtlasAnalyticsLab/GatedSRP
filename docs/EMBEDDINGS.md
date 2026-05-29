@@ -44,33 +44,34 @@ uv pip install git+https://github.com/facebookresearch/sam2.git
 
 Then run the dataset-aware launcher. It calls `atlaspatch process` with
 `--patch-size 256 --target-mag 20 --feature-extractors uni_v2` and writes the
-H5 files into the directory layout consumed by the trainers.
+H5 files into the directory layout consumed by the trainers. `--input` and
+`--output` can be absolute paths on shared storage; the examples use repo-local
+paths only as placeholders.
 
 ```bash
 # CAMELYON17: writes data/features/camelyon17/patches/*.h5
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset camelyon17 \
-  --input data/raw/camelyon17/images \
-  --output data/features/camelyon17
+  --input "${CAM17_RAW_ROOT:-data/raw/camelyon17/images}" \
+  --output "$(dirname "${CAM17_UNIV2_ROOT:-data/features/camelyon17/patches}")"
 
 # PANDA: writes data/features/panda/patches/*.h5
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset panda \
-  --input data/raw/panda/train_images \
-  --output data/features/panda
+  --input "${PANDA_RAW_ROOT:-data/raw/panda/train_images}" \
+  --output "$(dirname "${PANDA_FEATURE_ROOT:-data/features/panda/patches}")"
 
-# KGH: stages the four released subtype classes from data/labels/kgh/slides.csv
+# KGH: private cohort; stages the four class folders and excludes Normal.
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset kgh \
-  --input data/raw/kgh \
-  --output data/features/kgh \
-  --label-csv data/labels/kgh/slides.csv
+  --input "${KGH_RAW_ROOT:-data/raw/kgh}" \
+  --output "$(dirname "${KGH_FEATURE_ROOT:-data/features/kgh/patches}")"
 
 # BRACS: point --input at the directory containing BRACS WSIs.
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset bracs \
-  --input data/raw/bracs \
-  --output data/features/bracs
+  --input "${BRACS_RAW_ROOT:-data/raw/bracs}" \
+  --output "$(dirname "${BRACS_FEATURE_ROOT:-data/features/bracs/patches}")"
 ```
 
 CAMELYON16 keeps the class-specific feature folders expected by the loader:
@@ -78,27 +79,43 @@ CAMELYON16 keeps the class-specific feature folders expected by the loader:
 ```bash
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset camelyon16 \
-  --input data/raw/camelyon16/training \
-  --output data/features/camelyon16
+  --input "${CAM16_RAW_ROOT:-data/raw/camelyon16/training}" \
+  --output "${CAM16_UNIV2_ROOT:-data/features/camelyon16}"
+```
+
+If CAMELYON16 normal and tumor slides are stored in separate server paths, pass
+them explicitly:
+
+```bash
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset camelyon16 \
+  --input /unused/when/class/dirs/are/set \
+  --cam16-normal-dir /shared/CAMELYON16/normal-slides \
+  --cam16-tumor-dir /shared/CAMELYON16/tumor-slides \
+  --output "${CAM16_UNIV2_ROOT:-data/features/camelyon16}"
 ```
 
 TCGA survival uses one output tree per cohort:
 
 ```bash
+# First download, or stage already downloaded, raw TCGA SVS files.
+bash scripts/download_tcga_slides.sh
+
+# Then extract one AtlasPatch H5 tree per cohort.
 for cohort in KIRC KIRP LUAD STAD UCEC; do
   python scripts/extract_atlaspatch_embeddings.py \
     --dataset tcga \
     --cohort "$cohort" \
-    --input "data/raw/tcga-to-atlas/A-TCGA-${cohort}" \
-    --output data/features/tcga-to-atlas
+    --input "${TCGA_RAW_ROOT:-data/raw/tcga-to-atlas}/A-TCGA-${cohort}" \
+    --output "${TCGA_FEATURE_ROOT:-data/features/tcga-to-atlas}"
 done
 ```
 
 The generic shell wrapper remains available for one-off extraction:
 
 ```bash
-INPUT_DIR=data/raw/camelyon17/images \
-OUTPUT_DIR=data/features/camelyon17 \
+INPUT_DIR="${CAM17_RAW_ROOT:-data/raw/camelyon17/images}" \
+OUTPUT_DIR="$(dirname "${CAM17_UNIV2_ROOT:-data/features/camelyon17/patches}")" \
 bash scripts/extract_with_atlaspatch.sh
 ```
 

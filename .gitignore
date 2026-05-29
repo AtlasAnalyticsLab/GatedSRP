@@ -18,6 +18,9 @@ data/labels/**
 !data/labels/**/*.csv
 !data/labels/**/*.tsv
 !data/labels/**/*.xlsx
+
+# KGH is a private cohort; do not version local KGH labels.
+data/labels/kgh/**
 runs/
 logs/
 wandb/

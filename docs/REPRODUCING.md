@@ -51,10 +51,12 @@ For CPU-only smoke tests, install the CPU PyTorch wheel instead.
 2. Extract UNI-v2 H5 embeddings as described in [EMBEDDINGS.md](EMBEDDINGS.md).
    For the patch-encoder ablation, also prepare MedSigLIP-448 and ViT-B/16
    H5 embeddings with the documented keys.
-3. Source path variables:
+3. Source path variables. For existing server datasets, copy the example file
+   and replace raw/feature roots with absolute paths before sourcing it:
 
 ```bash
-source configs/paths.example.env
+cp configs/paths.example.env .env.local
+source .env.local
 ```
 
 4. Validate H5 inventories:
@@ -141,6 +143,13 @@ python scripts/collect_paper_results.py --strict
 Collected main-run summaries are written to `results/rerun/`. Reference tables
 are in `results/`. The ablation reference TSVs are already stored separately in
 `results/ablation_*.tsv`.
+
+## Checkpoints
+
+Pretrained checkpoints are not bundled with this repository. They are generated
+outputs, and the reproduction path is to regenerate them from the manifests,
+seeds, labels, and H5 embeddings documented here. See [CHECKPOINTS.md](CHECKPOINTS.md)
+for the checkpoint policy and expected local output locations.
 
 ## Notes on Compute
 

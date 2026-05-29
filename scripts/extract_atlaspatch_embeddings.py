@@ -30,6 +30,7 @@ SLIDE_EXTENSIONS = (
     ".vms",
     ".vmu",
 )
+KGH_CLASSES = ("CP_HP", "CP_SSL", "CP_TA", "CP_TVA")
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         "--input",
         required=True,
         type=Path,
-        help="Raw WSI directory or a single WSI file. For KGH, pass the raw root with train/test subfolders.",
+        help="Raw WSI directory or a single WSI file. This can be any local/server path.",
     )
     parser.add_argument(
         "--output",
@@ -61,6 +62,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cohort", choices=["KIRC", "KIRP", "LUAD", "STAD", "UCEC"])
     parser.add_argument("--label-csv", type=Path, help="Optional label manifest used to stage selected slides.")
+    parser.add_argument("--cam16-normal-dir", type=Path, help="Existing CAMELYON16 normal-slide directory.")
+    parser.add_argument("--cam16-tumor-dir", type=Path, help="Existing CAMELYON16 tumor-slide directory.")
     parser.add_argument("--mpp-csv", type=Path, help="Optional AtlasPatch MPP CSV.")
     parser.add_argument("--feature-plugin", action="append", default=[], help="Optional AtlasPatch feature plugin path.")
     parser.add_argument("--patch-size", type=int, default=256)
@@ -89,11 +92,24 @@ def _single_encoder(args: argparse.Namespace) -> str:
     return encoders[0]
 
 
-def _stage_kgh_inputs(raw_root: Path, label_csv: Path, staging_dir: Path) -> Path:
+def _stage_kgh_inputs(raw_root: Path, label_csv: Path | None, staging_dir: Path) -> Path:
     """Build a flat symlink directory for the KGH slides used by the task."""
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=True)
+
+    if label_csv is None:
+        for source_split in ("train", "test"):
+            for class_name in KGH_CLASSES:
+                class_dir = raw_root / source_split / class_name
+                if not class_dir.is_dir():
+                    continue
+                for source in sorted(class_dir.iterdir()):
+                    if source.is_file() and source.suffix.lower() in SLIDE_EXTENSIONS:
+                        target = staging_dir / source.name
+                        if not target.exists():
+                            target.symlink_to(source)
+        return staging_dir
 
     with label_csv.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -126,9 +142,11 @@ def _jobs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
     if args.dataset == "camelyon16":
         encoder = _single_encoder(args)
         geom = f"{args.target_mag}x_{args.patch_size}"
+        normal_dir = args.cam16_normal_dir or args.input / "normal"
+        tumor_dir = args.cam16_tumor_dir or args.input / "tumor"
         return [
-            (args.input / "normal", args.output / "normal" / encoder / geom),
-            (args.input / "tumor", args.output / "tumor" / encoder / geom),
+            (normal_dir, args.output / "normal" / encoder / geom),
+            (tumor_dir, args.output / "tumor" / encoder / geom),
         ]
     if args.dataset == "tcga":
         if not args.cohort:
@@ -137,7 +155,7 @@ def _jobs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
         geom = f"{args.target_mag}x_{args.patch_size}"
         return [(args.input, args.output / f"A-TCGA-{args.cohort}" / "40x" / encoder / geom)]
     if args.dataset == "kgh":
-        label_csv = args.label_csv or Path("data/labels/kgh/slides.csv")
+        label_csv = args.label_csv
         staging = args.output / ".atlaspatch_inputs" / "kgh"
         if args.dry_run:
             return [(staging, args.output)]
