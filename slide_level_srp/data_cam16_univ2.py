@@ -8,6 +8,7 @@ provided in ``CAM16_UNIV2_ROOT``.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -29,6 +30,7 @@ CAM16_UNIV2_ROOT = os.environ.get(
     "CAM16_UNIV2_ROOT",
     "data/features/camelyon16",
 )
+CAM16_LABEL_CSV = os.environ.get("CAM16_LABEL_CSV", "data/labels/camelyon16/slides.csv")
 CAM16_UNIV2_FEATURE_KEY = os.environ.get("CAM16_UNIV2_FEATURE_KEY", "features/uni_v2")
 CAM16_UNIV2_DIM = 1536
 _N_MAX_SAFETY_CAM16_UNIV2 = 16384
@@ -48,15 +50,26 @@ def enumerate_cam16_univ2_slides(
     *,
     require_both_classes: bool = True,
     feature_family: str = "uni_v2",
+    label_csv: str = CAM16_LABEL_CSV,
 ) -> List[Cam16UniV2SlideRecord]:
     """Enumerate labeled normal/tumor H5 files for one feature family.
 
-    The extraction may still be in progress. By default we require both
-    class directories to exist and contain H5 files so a launch script
-    fails before training rather than producing a tumor-only split.
+    The release path reads ``data/labels/camelyon16/slides.csv`` so the binary
+    labels are explicit.  Feature H5s remain organized by class directory to
+    match the AtlasPatch extraction script.  When the label CSV is absent, the
+    function falls back to the historical class-directory inventory.
     """
     root = Path(feature_root)
     family = feature_family.strip("/")
+    label_path = Path(label_csv)
+    if label_path.exists():
+        return _enumerate_cam16_univ2_from_label_csv(
+            label_path=label_path,
+            feature_root=root,
+            feature_family=family,
+            require_both_classes=require_both_classes,
+        )
+
     out: List[Cam16UniV2SlideRecord] = []
     class_counts: dict[str, int] = {}
     for label_int, subdir in ((1, "tumor"), (0, "normal")):
@@ -82,6 +95,70 @@ def enumerate_cam16_univ2_slides(
             f"CAM16 {family} inventory incomplete: "
             f"tumor={class_counts.get('tumor', 0)} normal={class_counts.get('normal', 0)}. "
             "Do not launch CAM16 ablations until both labeled classes are present."
+        )
+    out.sort(key=lambda r: r.slide_id)
+    return out
+
+
+def _enumerate_cam16_univ2_from_label_csv(
+    *,
+    label_path: Path,
+    feature_root: Path,
+    feature_family: str,
+    require_both_classes: bool,
+) -> List[Cam16UniV2SlideRecord]:
+    """Read the released CAMELYON16 label manifest and join it to class H5s."""
+    out: list[Cam16UniV2SlideRecord] = []
+    class_counts: dict[str, int] = {"tumor": 0, "normal": 0}
+    seen: set[str] = set()
+    class_to_label = {"normal": 0, "tumor": 1}
+    with label_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"slide_id", "class_name", "label"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise RuntimeError(f"CAM16 label CSV missing required columns: {sorted(missing)}")
+        for row in reader:
+            slide_id = row.get("slide_id", "").strip()
+            class_name = row.get("class_name", "").strip().lower()
+            if not slide_id:
+                continue
+            if slide_id in seen:
+                raise RuntimeError(f"duplicate CAM16 slide_id in label CSV: {slide_id}")
+            seen.add(slide_id)
+            if class_name not in class_to_label:
+                raise RuntimeError(
+                    f"CAM16 slide {slide_id} has unsupported class {class_name!r}; "
+                    "expected 'normal' or 'tumor'"
+                )
+            label = int(row.get("label", class_to_label[class_name]))
+            if label != class_to_label[class_name]:
+                raise RuntimeError(
+                    f"CAM16 slide {slide_id} label={label} disagrees with "
+                    f"class_name={class_name!r}"
+                )
+            h5_path = (
+                feature_root
+                / class_name
+                / feature_family
+                / "20x_256"
+                / "patches"
+                / f"{slide_id}.h5"
+            )
+            if not h5_path.exists():
+                continue
+            class_counts[class_name] += 1
+            out.append(Cam16UniV2SlideRecord(
+                slide_id=slide_id,
+                patient_id=slide_id,
+                center=0,
+                label=label,
+                h5_path=str(h5_path),
+            ))
+    if require_both_classes and any(class_counts.get(c, 0) == 0 for c in ("tumor", "normal")):
+        raise RuntimeError(
+            f"CAM16 {feature_family} inventory incomplete after label join: "
+            f"tumor={class_counts.get('tumor', 0)} normal={class_counts.get('normal', 0)}"
         )
     out.sort(key=lambda r: r.slide_id)
     return out

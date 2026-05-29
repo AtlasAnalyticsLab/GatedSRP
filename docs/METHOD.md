@@ -10,6 +10,22 @@ prognostic deviations harder to preserve.
 Gated SRP keeps the ordinary attention layer and adds a small geometric update
 around it.
 
+<p align="center">
+  <img src="../assets/gatedsrp_overview.png" width="940" alt="Gated SRP method overview">
+</p>
+<p align="center">
+  <sub>The module is a drop-in correction after self-attention: estimate the local direction, project the attention output onto it, and use a learned signed gate to decide how much of that component to remove or preserve.</sub>
+</p>
+
+## Motivation
+
+<p align="center">
+  <img src="../assets/local_redundancy.png" width="940" alt="Local feature similarity in natural images and whole-slide images">
+</p>
+<p align="center">
+  <sub>WSI patch neighborhoods show high local feature similarity, making local redundancy a pathology-specific structure rather than a generic image prior.</sub>
+</p>
+
 ## Core Update
 
 For each attention head and patch token:
@@ -38,6 +54,13 @@ Negative values can preserve or amplify local context when the task needs it.
 | Identity-safe initialization | The signed gate starts at `beta_i = 0`, so the model begins as the base attention layer. |
 | CLS direct pass-through | The CLS row is not directly projected; it receives SRP effects only through changed patch tokens. |
 | Small parameter overhead | The reported WSI runs add only `+0.004%` to `+0.034%` parameters depending on dataset configuration. |
+
+<p align="center">
+  <img src="../assets/gate_coefficients.png" width="900" alt="Effective signed gate coefficients over training">
+</p>
+<p align="center">
+  <sub>The signed gate does not converge to one universal value: its effective coefficient changes by dataset and layer, which supports keeping the correction adaptive.</sub>
+</p>
 
 ## Where It Lives
 

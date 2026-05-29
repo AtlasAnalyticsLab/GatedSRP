@@ -11,7 +11,13 @@ data/features/**
 data/labels/**
 !data/raw/.gitkeep
 !data/features/.gitkeep
+!data/labels/
+!data/labels/**/
 !data/labels/.gitkeep
+!data/labels/README.md
+!data/labels/**/*.csv
+!data/labels/**/*.tsv
+!data/labels/**/*.xlsx
 runs/
 logs/
 wandb/

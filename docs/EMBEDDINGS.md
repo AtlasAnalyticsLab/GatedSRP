@@ -27,18 +27,79 @@ python scripts/validate_h5_embeddings.py \
 
 ## Extraction Template
 
-Install AtlasPatch in the same environment, then run:
+Install AtlasPatch in the same environment used for feature extraction:
+
+```bash
+python -m pip install atlas-patch
+python -m pip install git+https://github.com/facebookresearch/sam2.git
+export HF_TOKEN=your_huggingface_token
+```
+
+For `uv`:
+
+```bash
+uv pip install atlas-patch
+uv pip install git+https://github.com/facebookresearch/sam2.git
+```
+
+Then run the dataset-aware launcher. It calls `atlaspatch process` with
+`--patch-size 256 --target-mag 20 --feature-extractors uni_v2` and writes the
+H5 files into the directory layout consumed by the trainers.
+
+```bash
+# CAMELYON17: writes data/features/camelyon17/patches/*.h5
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset camelyon17 \
+  --input data/raw/camelyon17/images \
+  --output data/features/camelyon17
+
+# PANDA: writes data/features/panda/patches/*.h5
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset panda \
+  --input data/raw/panda/train_images \
+  --output data/features/panda
+
+# KGH: stages the four released subtype classes from data/labels/kgh/slides.csv
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset kgh \
+  --input data/raw/kgh \
+  --output data/features/kgh \
+  --label-csv data/labels/kgh/slides.csv
+
+# BRACS: point --input at the directory containing BRACS WSIs.
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset bracs \
+  --input data/raw/bracs \
+  --output data/features/bracs
+```
+
+CAMELYON16 keeps the class-specific feature folders expected by the loader:
+
+```bash
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset camelyon16 \
+  --input data/raw/camelyon16/training \
+  --output data/features/camelyon16
+```
+
+TCGA survival uses one output tree per cohort:
+
+```bash
+for cohort in KIRC KIRP LUAD STAD UCEC; do
+  python scripts/extract_atlaspatch_embeddings.py \
+    --dataset tcga \
+    --cohort "$cohort" \
+    --input "data/raw/tcga-to-atlas/A-TCGA-${cohort}" \
+    --output data/features/tcga-to-atlas
+done
+```
+
+The generic shell wrapper remains available for one-off extraction:
 
 ```bash
 INPUT_DIR=data/raw/camelyon17/images \
 OUTPUT_DIR=data/features/camelyon17 \
 bash scripts/extract_with_atlaspatch.sh
-```
-
-AtlasPatch should write `data/features/camelyon17/patches/*.h5`. Point the corresponding environment variable at the `patches` directory:
-
-```bash
-export CAM17_UNIV2_ROOT=data/features/camelyon17/patches
 ```
 
 For large cohorts, run extraction once and treat the H5 files as immutable

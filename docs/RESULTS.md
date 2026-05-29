@@ -11,6 +11,22 @@ Reference TSVs are stored in [results](../results).
 | Best mean AUC on three of five classification datasets | [classification_main_table.tsv](../results/classification_main_table.tsv) |
 | Works in dense full-attention settings, not only Nystrom attention | [ablation_architecture_choice.tsv](../results/ablation_architecture_choice.tsv) |
 
+## Qualitative View
+
+<p align="center">
+  <img src="../assets/attention_heatmaps.png" width="940" alt="Attention heatmap comparison across slide-level datasets">
+</p>
+<p align="center">
+  <sub>Attention heatmaps show how the Gated SRP correction changes spatial focus relative to the NA, XSA, and Diff comparison methods across representative datasets.</sub>
+</p>
+
+<p align="center">
+  <img src="../assets/gate_coefficients.png" width="900" alt="Effective signed gate coefficients over training">
+</p>
+<p align="center">
+  <sub>Effective gate coefficients are learned during training and vary across layer and dataset, matching the adaptive signed-gate design used by the released configs.</sub>
+</p>
+
 ## Classification
 
 [classification_main_table.tsv](../results/classification_main_table.tsv) contains mean +/- sample standard deviation over five seeds for:

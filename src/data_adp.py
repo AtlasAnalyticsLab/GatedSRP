@@ -5,8 +5,9 @@ hierarchical patch classification task.
 Expected public data layout, which can be overridden with ADP_* environment
 variables:
 
-    data/raw/adp/ADP V1.0 Release/
+    data/labels/adp/
         ADP_EncodedLabels_Release1_Flat.csv  <- 17668 rows × (1 name + 43 labels)
+    data/raw/adp/ADP V1.0 Release/
         img_res_1um_bicubic/<patch>.png      <- 17668 RGB PNGs, 272×272 each, 1 µm/px
         splits/
             train.npy   <- (14134,) int32 indices into the CSV
@@ -56,7 +57,7 @@ from torchvision import transforms
 
 _DEFAULT_ADP_ROOT = Path("data/raw/adp/ADP V1.0 Release")
 ADP_ROOT = Path(os.environ.get("ADP_ROOT", _DEFAULT_ADP_ROOT))
-ADP_CSV = Path(os.environ.get("ADP_CSV", ADP_ROOT / "ADP_EncodedLabels_Release1_Flat.csv"))
+ADP_CSV = Path(os.environ.get("ADP_CSV", "data/labels/adp/ADP_EncodedLabels_Release1_Flat.csv"))
 ADP_IMG_DIR = Path(os.environ.get("ADP_IMG_DIR", ADP_ROOT / "img_res_1um_bicubic"))
 ADP_SPLITS_DIR = Path(os.environ.get("ADP_SPLITS_DIR", ADP_ROOT / "splits"))
 

@@ -1,5 +1,5 @@
 # Data Directory
 
-This directory is intentionally empty in git. Put raw WSIs, labels, and extracted H5 embeddings here or point the environment variables in `configs/paths.example.env` to external storage.
+This directory keeps small label metadata in git and leaves raw WSIs plus extracted H5 embeddings out of git.
 
-Large local files under `data/raw`, `data/labels`, and `data/features` are ignored by git.
+Put raw WSIs under `data/raw/`, generate AtlasPatch H5 files under `data/features/`, or point the environment variables in `configs/paths.example.env` to external storage.

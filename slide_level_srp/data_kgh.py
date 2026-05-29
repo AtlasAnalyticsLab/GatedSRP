@@ -14,6 +14,7 @@ excluded so the trainer sees a stable 4-class target.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ KGH_FEATURE_ROOT = os.environ.get(
     "data/features/kgh/patches",
 )
 KGH_RAW_ROOT = os.environ.get("KGH_RAW_ROOT", "data/raw/kgh")
+KGH_LABEL_CSV = os.environ.get("KGH_LABEL_CSV", "data/labels/kgh/slides.csv")
 KGH_FEATURE_KEY = os.environ.get("KGH_FEATURE_KEY", "features/uni_v2")
 KGH_DIM = 1536
 KGH_CLASSES = ["CP_HP", "CP_SSL", "CP_TA", "CP_TVA"]
@@ -56,12 +58,23 @@ class KGHFoldAssignment:
 def enumerate_kgh_slides(
     feature_root: str = KGH_FEATURE_ROOT,
     raw_root: str = KGH_RAW_ROOT,
+    label_csv: str = KGH_LABEL_CSV,
 ) -> List[KGHSlideRecord]:
-    """Join raw KGH class folders with extracted UNI-v2 feature H5s."""
+    """Join KGH labels with extracted UNI-v2 feature H5s.
+
+    The release path uses ``data/labels/kgh/slides.csv`` so labels are explicit
+    and reproducible without relying on local class-folder names.  When that
+    manifest is absent, the loader falls back to the historical raw-folder
+    layout to keep private/local runs usable.
+    """
     h5_root = Path(feature_root)
-    raw = Path(raw_root)
     if not h5_root.is_dir():
         raise FileNotFoundError(f"missing KGH feature dir: {h5_root}")
+    label_path = Path(label_csv)
+    if label_path.exists():
+        return _enumerate_kgh_from_label_csv(label_path, h5_root)
+
+    raw = Path(raw_root)
     out: List[KGHSlideRecord] = []
     for label, cls in enumerate(KGH_CLASSES):
         for split in ("train", "test"):
@@ -83,6 +96,54 @@ def enumerate_kgh_slides(
     if not out:
         raise RuntimeError(
             f"no KGH slides found by joining raw_root={raw} with feature_root={h5_root}"
+        )
+    out.sort(key=lambda r: r.slide_id)
+    return out
+
+
+def _enumerate_kgh_from_label_csv(label_path: Path, h5_root: Path) -> List[KGHSlideRecord]:
+    """Read the released KGH slide-label manifest and join it to H5 files."""
+    out: list[KGHSlideRecord] = []
+    seen: set[str] = set()
+    class_to_id = {name: idx for idx, name in enumerate(KGH_CLASSES)}
+    with label_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"slide_id", "class_name", "label"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise RuntimeError(f"KGH label CSV missing required columns: {sorted(missing)}")
+        for row in reader:
+            slide_id = row.get("slide_id", "").strip()
+            class_name = row.get("class_name", "").strip()
+            if not slide_id:
+                continue
+            if slide_id in seen:
+                raise RuntimeError(f"duplicate KGH slide_id in label CSV: {slide_id}")
+            seen.add(slide_id)
+            if class_name not in class_to_id:
+                raise RuntimeError(
+                    f"KGH slide {slide_id} has unsupported class {class_name!r}; "
+                    f"expected one of {KGH_CLASSES}"
+                )
+            label = int(row.get("label", class_to_id[class_name]))
+            if label != class_to_id[class_name]:
+                raise RuntimeError(
+                    f"KGH slide {slide_id} label={label} disagrees with "
+                    f"class_name={class_name!r}"
+                )
+            h5_path = h5_root / f"{slide_id}.h5"
+            if not h5_path.exists():
+                continue
+            out.append(KGHSlideRecord(
+                slide_id=slide_id,
+                patient_id=slide_id,
+                center=0,
+                label=label,
+                h5_path=str(h5_path),
+            ))
+    if not out:
+        raise RuntimeError(
+            f"no KGH slides found by joining label_csv={label_path} with feature_root={h5_root}"
         )
     out.sort(key=lambda r: r.slide_id)
     return out

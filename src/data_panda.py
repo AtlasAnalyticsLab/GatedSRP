@@ -2,7 +2,7 @@
 PANDA slide-level data loader (default: UNI-v2 features, 20x / 256-px patches).
 
 Source layout:
-  data/raw/panda/train.csv
+  data/labels/panda/train.csv
        columns: image_id, data_provider, isup_grade, gleason_score
        10,616 rows.
   data/features/panda/patches/<image_id>.h5
@@ -48,7 +48,11 @@ from torch.utils.data import DataLoader, Dataset
 
 
 PANDA_ROOT = Path(os.environ.get("PANDA_ROOT", "data/raw/panda"))
-PANDA_CSV = PANDA_ROOT / "train.csv"
+PANDA_LABEL_CSV = Path(os.environ.get(
+    "PANDA_CSV",
+    os.environ.get("PANDA_LABEL_CSV", "data/labels/panda/train.csv"),
+))
+PANDA_CSV = PANDA_LABEL_CSV
 PANDA_H5_DIR = Path(os.environ.get(
     "PANDA_FEATURE_ROOT",
     "data/features/panda/patches",

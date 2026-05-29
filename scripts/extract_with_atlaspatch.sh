@@ -5,6 +5,9 @@
 # WSIs and OUTPUT_DIR at the dataset-specific feature directory documented in
 # docs/EMBEDDINGS.md. AtlasPatch writes one H5 per slide under
 # "$OUTPUT_DIR/patches" with /coords and /features/uni_v2.
+#
+# For the released dataset layouts, prefer:
+#   python scripts/extract_atlaspatch_embeddings.py --dataset <name> ...
 set -euo pipefail
 
 : "${INPUT_DIR:?set INPUT_DIR to a directory of WSI files}"
@@ -14,6 +17,12 @@ FEATURE_BATCH_SIZE="${FEATURE_BATCH_SIZE:-24}"
 FEATURE_NUM_WORKERS="${FEATURE_NUM_WORKERS:-2}"
 PATCH_WORKERS="${PATCH_WORKERS:-2}"
 DEVICE="${DEVICE:-cuda}"
+ATLASPATCH_FORCE="${ATLASPATCH_FORCE:-0}"
+
+force_args=()
+if [[ "$ATLASPATCH_FORCE" == "1" ]]; then
+  force_args+=(--force)
+fi
 
 atlaspatch process "$INPUT_DIR" \
   --output "$OUTPUT_DIR" \
@@ -26,4 +35,4 @@ atlaspatch process "$INPUT_DIR" \
   --patch-workers "$PATCH_WORKERS" \
   --device "$DEVICE" \
   --feature-device "$DEVICE" \
-  --skip-existing
+  "${force_args[@]}"

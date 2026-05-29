@@ -12,7 +12,10 @@ identity-initialized gate to subtract, preserve, or reflect that redundant
 component.
 
 <p align="center">
-  <img src="assets/gatedsrp_overview.svg" width="920" alt="Gated SRP overview">
+  <img src="assets/gatedsrp_overview.png" width="940" alt="Gated SRP method overview">
+</p>
+<p align="center">
+  <sub>Gated SRP is inserted directly after self-attention, estimates a local redundancy direction from neighboring patches, and applies a learned signed gate before the residual update.</sub>
 </p>
 
 ## Why This Exists
@@ -33,6 +36,13 @@ z_i = y_i - beta_i * <y_i, r_hat_i> * r_hat_i
 small learned signed gate. At initialization, `beta_i = 0`, so the module starts
 as the original attention layer.
 
+<p align="center">
+  <img src="assets/local_redundancy.png" width="940" alt="Local redundancy comparison between natural images and pathology whole-slide images">
+</p>
+<p align="center">
+  <sub><b>Why the correction is WSI-specific.</b> Nearby pathology patches are often much more locally homogeneous than natural-image patches, so the locally common direction is a meaningful signal to estimate and gate.</sub>
+</p>
+
 ## What You Can Do With This Repo
 
 | Goal | Start here |
@@ -44,10 +54,20 @@ as the original attention layer.
 | Extract or validate H5 patch embeddings | [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) |
 | Inspect reference numbers | [docs/RESULTS.md](docs/RESULTS.md) |
 
-## Result Snapshot
+## Visual Evidence
 
 <p align="center">
-  <img src="assets/result_snapshot.svg" width="920" alt="Gated SRP result snapshot">
+  <img src="assets/gate_coefficients.png" width="900" alt="Effective signed gate coefficients over training">
+</p>
+<p align="center">
+  <sub><b>The gate is adaptive.</b> Effective coefficients evolve differently across datasets and layers, which is why the implementation keeps the correction signed and token/head-dependent instead of using a fixed projection strength.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/attention_heatmaps.png" width="940" alt="Attention heatmap comparison across datasets and methods">
+</p>
+<p align="center">
+  <sub><b>Qualitative attention behavior.</b> The attention maps compare the baseline, prior spatial correction variants, and Gated SRP across representative slide-level datasets.</sub>
 </p>
 
 Reference tables are bundled in [results/](results). Exact run commands are
@@ -107,6 +127,19 @@ Run the lightweight tests:
 
 ```bash
 python -m pytest tests -q
+```
+
+Label metadata used by the released manifests is checked in under
+[data/labels](data/labels). To populate the H5 features from raw WSIs, install
+AtlasPatch and run the dataset-aware launcher, for example:
+
+```bash
+python -m pip install atlas-patch
+python -m pip install git+https://github.com/facebookresearch/sam2.git
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset camelyon17 \
+  --input data/raw/camelyon17/images \
+  --output data/features/camelyon17
 ```
 
 ## Use Gated SRP in Your Own Model
