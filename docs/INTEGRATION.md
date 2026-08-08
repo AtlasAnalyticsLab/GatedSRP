@@ -1,37 +1,54 @@
-# Integrating Gated SRP
+# Integrating GatedSRP
 
-This page is for using Gated SRP outside the bundled reproduction manifests.
-The shortest path is to reuse the provided attention classes. The most portable
-path is to implement the projection update around your own attention block.
+GatedSRP changes the patch-token attention update, not the task head. A model
+needs patch coordinates, a local neighbor graph, and access to the per-patch
+attention stream. Existing positional encoding, residual connections, and CLS
+readout can remain unchanged.
 
-## Inputs You Need
-
-Gated SRP needs the same token sequence as your attention layer plus local
-neighborhood information.
+## Integration Contract
 
 | Input | Shape | Meaning |
 |---|---:|---|
-| `features` | `(B, N, D_in)` | Frozen or trainable patch features before the slide aggregator. |
-| `coords` | `(N, 2)` or `(B, N, 2)` | Level-0 patch coordinates or grid coordinates. |
-| `neighbor_index` | `(B, N, K)` | Neighbor token indices for each real patch, `-1` for invalid slots. |
-| `neighbor_mask` | `(B, N, K)` | Boolean mask for valid neighbor slots. |
-| `h_local` | `(B, N)` | Mean cosine similarity between each patch feature and its neighbors. Required by signed-gated SRP. |
+| Patch features | `(B, N, D_in)` | Input feature bag, usually frozen patch-encoder embeddings. |
+| Coordinates | `(B, N, 2)` | Level-0 pixel coordinates or integer grid positions. |
+| Neighbor indices | `(B, N, K)` | Source patch indices; `-1` marks a missing coordinate cell. |
+| Neighbor mask | `(B, N, K)` | Valid-neighbor mask aligned with the indices. |
+| Neighbor weights | `(B, N, K)` | Optional uniform, Gaussian, or inverse-distance weights. |
+| Local homogeneity | `(B, N)` | Mean feature cosine similarity to valid neighbors for the token gate. |
 
-The bundled WSI datasets build `neighbor_index`, `neighbor_mask`, and
-`h_morph` in their loaders. The slide trainer computes `h_local` on device
-from the raw feature tensor and neighbor graph.
-
-For a runnable synthetic example, see
-[examples/minimal_slide_forward.py](../examples/minimal_slide_forward.py).
-
-## Option A: Slide-Level Nystrom Aggregator
-
-Use this when your model resembles a TransMIL-style WSI aggregator with one
-slide bag per forward pass.
+The public loaders construct these fields from each H5 `/coords` array. To use
+the same graph builder in another pipeline:
 
 ```python
 import torch
 
+from slide_level_srp.data_ext import build_neighbor_graph, compute_h_morph
+
+# coords_np: (N, 2), features_np: (N, D)
+index_np, mask_np, weight_np = build_neighbor_graph(
+    coords_np,
+    stride=512,
+    radius=1,
+    source="real",
+    weighting="uniform",
+)
+h_local_np = compute_h_morph(features_np, index_np, mask_np)
+
+neighbor_index = torch.from_numpy(index_np).unsqueeze(0)
+neighbor_mask = torch.from_numpy(mask_np).unsqueeze(0)
+neighbor_weight = torch.from_numpy(weight_np).unsqueeze(0)
+h_local = torch.from_numpy(h_local_np).unsqueeze(0)
+```
+
+Set `stride` to the level-0 distance between adjacent extracted patches. The
+AtlasPatch loaders use dataset-specific defaults where the H5 file does not
+store this metadata.
+
+## Option 1: Use the Nyström Aggregator
+
+This is the shortest route for a TransMIL-style one-slide-per-batch model.
+
+```python
 from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
 
 model = NystromSRPAggregator(
@@ -46,29 +63,92 @@ model = NystromSRPAggregator(
     gate_hidden_dim=16,
     gate_output_init="zero",
     gate_activation="tanh",
+    srp_context_impl="streaming_mean",
+    srp_correction_chunk_size=32768,
 )
-
-features = torch.randn(1, 2048, 1536)
-neighbor_index = torch.full((1, 2048, 8), -1, dtype=torch.long)
-neighbor_mask = torch.zeros((1, 2048, 8), dtype=torch.bool)
-h_local = torch.zeros((1, 2048))
 
 logits = model(
     features,
     neighbor_index,
     neighbor_mask,
     h_local=h_local,
+    neighbor_weight=neighbor_weight,
 )
 ```
 
-For real data, do not use the dummy neighbor graph above. Build the graph from
-patch coordinates using `slide_level_srp.data_ext.build_neighbor_graph`, or use
-one of the bundled dataset loaders.
+`features`, graph tensors, and `h_local` must be on the same device as the
+model. The implementation supports variable slide lengths with batch size 1.
 
-## Option B: Fixed-Grid Full Attention
+## Option 2: Add a Post-Attention Hook
 
-Use this when you have a ViT-style fixed patch grid, such as a 14 x 14 or
-17 x 17 image-token grid.
+`PatchSRPCorrection` is an architecture-neutral module used by the SPAN and
+LongNet adapters. Insert it immediately after a patch-token attention update
+and before that update enters the residual path.
+
+```python
+import torch
+from torch import nn
+
+from slide_level_srp.src.srp_correction import PatchSRPCorrection
+
+class AttentionBlockWithGatedSRP(nn.Module):
+    def __init__(self, dim: int, attention: nn.Module):
+        super().__init__()
+        self.attn = attention
+        self.srp = PatchSRPCorrection(
+            dim,
+            hidden_dim=32,
+            delta_scale=2.0,
+            correction_chunk_size=8192,
+        )
+
+    def forward(self, x, neighbor_index, neighbor_mask, neighbor_weight=None):
+        residual = x
+        update = self.attn(x)
+
+        # Keep CLS outside the local patch graph.
+        patch_update = self.srp(
+            update[:, 1:],
+            neighbor_index,
+            neighbor_mask,
+            neighbor_weight=neighbor_weight,
+        )
+        update = torch.cat([update[:, :1], patch_update], dim=1)
+        return residual + update
+```
+
+This compact adapter estimates the local direction in the exposed
+post-attention patch stream. When your attention implementation exposes its
+value stream, use the value vectors for the local direction as in Option 3;
+that matches the Nyström implementation directly.
+
+## Option 3: Implement the Operator Directly
+
+For per-head attention output `y` and value vectors `v`:
+
+```python
+# y, v: (B, H, N, D)
+# neighbor_index, neighbor_mask: (B, N, K)
+neighbor_v = gather_neighbors(v.detach(), neighbor_index, neighbor_mask)
+_, r_hat, neighbor_count = neighborhood_mean(
+    neighbor_v,
+    neighbor_mask,
+    neighbor_weight,
+)
+
+projection = (y * r_hat).sum(dim=-1, keepdim=True) * r_hat
+beta = signed_gate(token_diagnostics, head_diagnostics)
+z = y - beta * projection
+```
+
+Reuse `TokenHeadGate` from `slide_level_srp/src/gate_signed.py` when possible.
+Its output path is zero-initialized and its shape validation catches graph/token
+misalignment before a long training run.
+
+## Fixed-Grid ViT
+
+For a fixed patch grid, `src.srp_patch_attention.PatchSRPAttention` builds the
+local grid internally:
 
 ```python
 from src.srp_patch_attention import PatchSRPAttention
@@ -76,8 +156,8 @@ from src.srp_patch_attention import PatchSRPAttention
 attn = PatchSRPAttention(
     dim=384,
     num_heads=6,
-    grid_h=14,
-    grid_w=14,
+    grid_h=17,
+    grid_w=17,
     beta_patch_mode="signed_gated",
     delta_scale=2.0,
     gate_hidden_dim=16,
@@ -85,47 +165,35 @@ attn = PatchSRPAttention(
 )
 ```
 
-`PatchSRPAttention` constructs the grid neighborhood internally. Pass `h_local`
-when using signed-gated or learned-local-reference modes.
+The ADP trainer demonstrates this path on raw RGB patches.
 
-## Option C: Implement the Update in Your Own Attention
+## Invariants to Preserve
 
-If you already have an attention implementation, add Gated SRP after computing
-per-head attention output `y` and values `v`.
+- Initialize the gate output path at zero so the inserted module starts as an
+  exact identity.
+- Correct real patch rows only; do not project CLS or padding rows.
+- Build paired comparison arms from the same train/validation/test split and,
+  when capping patches, the same retained subset.
+- Rebuild neighbor indices after subsampling. The dense experiment uses
+  deterministic random retention followed by nearest retained-coordinate
+  neighbors.
+- Treat the local direction as context for the correction. The default
+  implementation detaches this direction while preserving gradients through
+  `y` and the gate.
+- For a post-attention patch-only update, place the correction before a later
+  CLS-mixing block. A patch write after the final CLS readout has no effect.
+- Keep the coefficient bounded. Use `fixed` for `delta*tanh(g)` or
+  `direct_beta_softclip` for `2*tanh(g/2)`.
 
-```python
-# y: (B, H, N, D) attention output for patch tokens
-# v: (B, H, N, D) value vectors for patch tokens
-# neighbor_index: (B, N, K), neighbor_mask: (B, N, K)
+## Known Integrations
 
-neighbor_v = gather_neighbors(v.detach(), neighbor_index, neighbor_mask)
-r = masked_mean(neighbor_v, neighbor_mask)          # (B, H, N, D)
-r_hat = normalize(r)
+| Architecture | Public implementation | Setup |
+|---|---|---|
+| Nyström/TransMIL | `NystromSRPAggregator` | Core dependencies only. |
+| Dense MHSA | `DenseAttentionSRPAggregator` | Core dependencies; cap at 1,024 for the released comparison. |
+| SPAN | `OfficialSPANAggregator` | SPAN checkout, OmegaConf, compatible DGL. |
+| Prov-GigaPath LongNet | `OfficialGigaPathLongNetAggregator` | Prov-GigaPath checkout and flash-attn or xFormers. |
 
-dot = (y * r_hat).sum(dim=-1, keepdim=True)
-beta = signed_gate(token_diag, head_diag)           # (B, H, N, 1)
-z = y - beta * dot * r_hat
-```
-
-Keep these invariants:
-
-- Start from `beta = 0` so the model initially matches the base attention layer.
-- Do not directly project CLS tokens. Let CLS read changed patch tokens in the
-  next attention operation.
-- Use real-patch masks so padding and square-pad duplicate rows are excluded.
-- For post-attention patch-only updates, avoid relying on the final block if the
-  prediction head immediately reads CLS; there is no later attention step for
-  patch edits to reach CLS.
-
-## Reproduction Configurations
-
-The reported Gated SRP configurations are encoded in the manifests:
-
-- WSI classification: [configs/paper_classification.tsv](../configs/paper_classification.tsv)
-- TCGA survival: [configs/paper_tcga_survival.tsv](../configs/paper_tcga_survival.tsv)
-- Architecture ablation: [configs/paper_architecture_ablation.tsv](../configs/paper_architecture_ablation.tsv)
-- Design ablation: [configs/paper_design_ablation.tsv](../configs/paper_design_ablation.tsv)
-- Patch-encoder ablation: [configs/paper_patch_encoder_ablation.tsv](../configs/paper_patch_encoder_ablation.tsv)
-
-Use these as known-good starting points before changing gate range, hidden
-width, placement, neighborhood window, or patch encoder.
+Use [ARCHITECTURES.md](ARCHITECTURES.md) for optional dependency setup and
+[slide_backbones.tsv](../configs/slide_backbones.tsv) for
+complete paired commands.

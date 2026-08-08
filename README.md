@@ -1,90 +1,100 @@
 # GatedSRP: Local Redundancy-Aware Attention for Pathology Transformers
 
-![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
-![PyTorch](https://img.shields.io/badge/PyTorch-tested-ee4c2c)
-![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-2e7d5b)
-![Results](https://img.shields.io/badge/reproduction-manifests%20included-28536b)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-pytest-2f6f3e)](tests)
 
-**Gated Spatial Redundancy Projection (Gated SRP)** is a lightweight attention
-correction for whole-slide pathology transformers. It estimates the locally
-common tissue direction around each patch token and gives the model a signed,
-identity-initialized gate to subtract, preserve, or reflect that redundant
-component.
+[Project website](https://atlasanalyticslab.github.io/GatedSRP/) ·
+[Method](docs/METHOD.md) ·
+[Use in another model](docs/INTEGRATION.md) ·
+[Reproduce results](docs/REPRODUCING.md) ·
+[Data and embeddings](docs/DATASETS.md)
+
+**Gated Spatial Redundancy Projection (GatedSRP)** is a lightweight correction
+for pathology transformers. It identifies the feature direction shared by a
+patch and its spatial neighbors, then learns a signed token-and-head-specific
+coefficient that decides whether attention should retain, remove, or reflect
+that local component.
 
 <p align="center">
-  <img src="assets/gatedsrp_overview.png" width="940" alt="Gated SRP method overview">
-</p>
-<p align="center">
-  <sub>Gated SRP is inserted directly after self-attention, estimates a local redundancy direction from neighboring patches, and applies a learned signed gate before the residual update.</sub>
+  <img src="assets/gatedsrp_overview.png" width="980" alt="GatedSRP overview: local redundancy estimation, signed gate, and post-attention correction">
 </p>
 
-## Why This Exists
+## Why Local Redundancy Matters
 
-Whole-slide images are not natural images cut into independent tokens. Neighboring
-patches often contain the same tissue type, stain, texture, and cellular
-composition. Standard self-attention can repeatedly mix this local common signal
-into token representations, which can weaken subtle diagnostic or prognostic
-deviations.
+Whole-slide image tokens are spatially structured. Adjacent patches often
+repeat tissue type, stain, texture, and cell composition. Attention can keep
+mixing this locally common signal while the small diagnostic or prognostic
+deviations become harder to preserve.
 
-Gated SRP keeps the base attention layer intact and adds one geometric correction:
+GatedSRP leaves the attention operator intact and corrects each patch output:
 
 ```text
-z_i = y_i - beta_i * <y_i, r_hat_i> * r_hat_i
+r_i     = mean of neighboring value vectors
+r_hat_i = r_i / ||r_i||
+z_i     = y_i - beta_i <y_i, r_hat_i> r_hat_i
 ```
 
-`r_hat_i` is the normalized local neighborhood direction and `beta_i` is a
-small learned signed gate. At initialization, `beta_i = 0`, so the module starts
-as the original attention layer.
+The learned coefficient is signed and bounded. `beta=0` is identity,
+`beta=1` removes the aligned component, `beta=2` reflects it, and negative
+values reinforce local context. The gate is initialized at zero, so a model
+starts exactly from its unmodified attention path.
 
 <p align="center">
-  <img src="assets/local_redundancy.png" width="940" alt="Local redundancy comparison between natural images and pathology whole-slide images">
-</p>
-<p align="center">
-  <sub><b>Why the correction is WSI-specific.</b> Nearby pathology patches are often much more locally homogeneous than natural-image patches, so the locally common direction is a meaningful signal to estimate and gate.</sub>
+  <img src="assets/local_redundancy.png" width="980" alt="Comparison of local feature redundancy in natural images and pathology whole-slide images">
 </p>
 
-## What You Can Do With This Repo
+## Evidence at a Glance
 
-| Goal | Start here |
-|---|---|
-| Understand the mechanism | [docs/METHOD.md](docs/METHOD.md) |
-| Add Gated SRP to another transformer | [docs/INTEGRATION.md](docs/INTEGRATION.md) |
-| Reproduce the reported tables | [docs/REPRODUCING.md](docs/REPRODUCING.md) |
-| Understand checkpoint policy | [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md) |
-| Prepare datasets and labels | [docs/DATASETS.md](docs/DATASETS.md) |
-| Extract or validate H5 patch embeddings | [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) |
-| Inspect reference numbers | [docs/RESULTS.md](docs/RESULTS.md) |
+All values below are means over seeds 42-46. Complete aggregate and per-seed
+tables are in [results](results).
 
-## Visual Evidence
+| Question | Result | Table |
+|---|---|---|
+| Does the correction help survival prediction? | Highest mean case C-index on all five evaluated TCGA cohorts; mean paired change `+0.0269`, 95% CI `[0.0148, 0.0389]`, `p=0.0035`. | [TCGA survival](results/survival_summary.tsv), [statistics](results/cross_dataset_statistics.tsv) |
+| Does it help classification consistently? | Mean selected-metric change `+0.0108`; positive on 4/5 datasets and 12/16 classification metrics. | [classification](results/classification_summary.tsv), [dataset statistics](results/dataset_statistics.tsv) |
+| Is it tied to one attention family? | Evaluated with Nystrom attention, dense MHSA, official SPAN, and Prov-GigaPath LongNet. Effects are mixed across families rather than uniformly positive. | [slide backbones](results/slide_backbones.tsv) |
+| Is the local neighborhood important? | The `3x3` neighborhood has the best mean selected metric on all six evaluated tasks. | [neighborhood sizes](results/neighborhood_sizes.tsv) |
+| Is dataset-selected gate range essential? | Direct `beta=2*tanh(g/2)` remains competitive, but the selected fixed range is better on 5/6 tasks. | [coefficient parameterizations](results/coefficient_parameterizations.tsv) |
+| What does it cost? | PANDA peak reserved memory is `0.49 GiB`; mean TCGA peak reserved memory is `4.69 GiB` with the exact chunked correction. | [runtime efficiency](results/runtime_efficiency.tsv) |
 
 <p align="center">
-  <img src="assets/gate_coefficients.png" width="900" alt="Effective signed gate coefficients over training">
-</p>
-<p align="center">
-  <sub><b>The gate is adaptive.</b> Effective coefficients evolve differently across datasets and layers, which is why the implementation keeps the correction signed and token/head-dependent instead of using a fixed projection strength.</sub>
+  <img src="assets/signed_gate_examples.png" width="900" alt="Examples of learned signed GatedSRP coefficient regimes on PANDA and TCGA-KIRC">
 </p>
 
-<p align="center">
-  <img src="assets/attention_heatmaps.png" width="940" alt="Attention heatmap comparison across datasets and methods">
-</p>
-<p align="center">
-  <sub><b>Qualitative attention behavior.</b> The attention maps compare the baseline, prior spatial correction variants, and Gated SRP across representative slide-level datasets.</sub>
-</p>
+The learned behavior is not one universal phenotype: some slides remain near
+identity, PANDA examples can be weakly negative, and KIRC examples can move
+above projection strength. No evaluated checkpoint export had a mean
+coefficient in the reflection bin above `1.5`; see
+[coefficient_behavior.tsv](results/coefficient_behavior.tsv).
 
-Reference tables are bundled in [results/](results). Exact run commands are
-stored in [configs/](configs), so every reported number has a manifest row.
+## Install
 
-## Quick Start
+Choose one environment workflow. The pinned package versions match the
+completed experiments. The CUDA commands use PyTorch 2.6.0 with CUDA 12.4;
+use the CPU index instead on a CPU-only machine.
 
-Choose one environment path. PyTorch is installed explicitly so you can choose
-the CUDA or CPU wheel that matches your machine.
+AtlasPatch also needs the native OpenSlide library. The Conda environment
+installs it. On Ubuntu or Debian, install it before using venv or uv:
+
+```bash
+sudo apt-get install openslide-tools
+```
+
+CPU-only PyTorch installation:
+
+```bash
+python -m pip install torch==2.6.0 torchvision==0.21.0 \
+  --index-url https://download.pytorch.org/whl/cpu
+```
 
 ### Conda
 
 ```bash
 conda env create -f environment.yml
 conda activate gatedsrp
-python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
 ```
 
@@ -94,145 +104,181 @@ python -m pip install -r requirements.txt
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
 ```
 
 ### uv
 
 ```bash
-uv sync --python 3.10
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+uv pip install -r requirements.txt
 ```
 
-For CPU-only smoke tests, install the CPU PyTorch wheel instead.
+Run the CPU-compatible test suite after installation:
 
-## First Smoke Test
+```bash
+python -m pytest tests -q
+```
 
-Prepare datasets and frozen H5 embeddings as described in
-[docs/DATASETS.md](docs/DATASETS.md) and [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md).
-The raw slides and H5 files can live outside this repository; copy the example
-path file and set absolute paths for your server:
+## From Slides to a Run
+
+Raw slides and H5 embeddings may remain anywhere on your server. Configure
+their absolute paths rather than copying large datasets into this repository:
 
 ```bash
 cp configs/paths.example.env .env.local
 source .env.local
 ```
 
-Preview one command without launching training:
-
-```bash
-python scripts/run_manifest.py configs/paper_classification.tsv \
-  --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
-```
-
-Run the lightweight tests:
-
-```bash
-python -m pytest tests -q
-```
-
-Pretrained checkpoints are not bundled; the manifests regenerate `best.pt`
-artifacts locally. See [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
-
-Label metadata used by the released manifests is checked in under
-[data/labels](data/labels). To populate the H5 features from raw WSIs, install
-AtlasPatch and run the dataset-aware launcher, for example:
+1. Download the public datasets using [docs/DATASETS.md](docs/DATASETS.md).
+2. Install AtlasPatch and generate one H5 embedding file per WSI:
 
 ```bash
 python -m pip install atlas-patch
 python -m pip install git+https://github.com/facebookresearch/sam2.git
+
 python scripts/extract_atlaspatch_embeddings.py \
   --dataset camelyon17 \
-  --input "${CAM17_RAW_ROOT:-data/raw/camelyon17/images}" \
-  --output "$(dirname "${CAM17_UNIV2_ROOT:-data/features/camelyon17/patches}")"
+  --input "$CAM17_RAW_ROOT" \
+  --output "$(dirname "$CAM17_UNIV2_ROOT")"
 ```
 
-For TCGA survival, generate the GDC manifest from the checked-in label CSV and
-download the exact SVS slides before feature extraction. If you already have
-the slides on shared storage, set `TCGA_EXISTING_SLIDE_DIRS` to stage symlinks
-instead of downloading again:
+3. Validate the feature key, dimensions, coordinates, and row alignment:
+
+```bash
+python scripts/validate_h5_embeddings.py \
+  --root "$CAM17_UNIV2_ROOT" \
+  --feature-key features/uni_v2 \
+  --expected-dim 1536
+```
+
+4. Preview and run a single manifest row:
+
+```bash
+python scripts/run_manifest.py configs/classification_tasks.tsv \
+  --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
+
+python scripts/run_manifest.py configs/classification_tasks.tsv \
+  --where dataset=cam16 --where method=baseline --where seed=42
+```
+
+TCGA is fully enumerated by the checked-in OS label table. The helper either
+downloads the exact GDC slide set or stages slides already present elsewhere:
 
 ```bash
 bash scripts/download_tcga_slides.sh
 
-# Or stage existing GDC slides without downloading again:
-TCGA_EXISTING_SLIDE_DIRS=/shared/gdc/tcga-slides bash scripts/download_tcga_slides.sh
+TCGA_EXISTING_SLIDE_DIRS=/shared/gdc/tcga-slides \
+  bash scripts/download_tcga_slides.sh
 ```
 
-## Use Gated SRP in Your Own Model
+See [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) for every dataset-specific
+AtlasPatch command and H5 layout. KGH is a restricted cohort: its loader and
+manifest rows are retained, but no KGH labels, slides, or embeddings are
+distributed.
 
-For a TransMIL-style WSI aggregator:
+## Reproduce Every Evaluation
+
+```bash
+# Prediction tasks
+python scripts/run_manifest.py configs/classification_tasks.tsv --where access=public
+python scripts/run_manifest.py configs/survival_tasks.tsv --where access=public
+
+# Attention, slide backbones, MIL models, and patch representations
+python scripts/run_manifest.py configs/attention_operators.tsv --where access=public
+python scripts/run_manifest.py configs/slide_backbones.tsv --where access=public
+python scripts/run_manifest.py configs/mil_models.tsv --where access=public
+python scripts/run_manifest.py configs/patch_encoders.tsv --where access=public
+
+# GatedSRP components and spatial design
+python scripts/run_manifest.py configs/component_variants.tsv --where access=public
+python scripts/run_manifest.py configs/neighborhood_sizes.tsv --where access=public
+python scripts/run_manifest.py configs/coefficient_parameterizations.tsv --where access=public
+
+# Runtime and memory
+python scripts/run_manifest.py configs/runtime_efficiency.tsv --where access=public
+```
+
+Authorized KGH users can omit `--where access=public` from manifests containing
+restricted rows.
+
+Official SPAN and Prov-GigaPath LongNet rows require optional checkouts and
+their native dependencies:
+
+```bash
+bash scripts/setup_optional_architectures.sh
+```
+
+Collect task and typed-comparison outputs:
+
+```bash
+python scripts/collect_task_results.py --public-only --strict
+
+python scripts/collect_comparison_results.py configs/neighborhood_sizes.tsv \
+  --run-root "${GATEDSRP_NEIGHBORHOOD_OUT:-runs/neighborhood_sizes}" \
+  --public-only --strict
+```
+
+The complete run matrix, expected artifacts, output roots, and compute notes
+are documented in [docs/REPRODUCING.md](docs/REPRODUCING.md).
+
+## Add GatedSRP to Another Model
+
+The portable integration point is a post-attention patch-token hook. Existing
+attention, positional encoding, and readout stay in place.
 
 ```python
-from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
+from slide_level_srp.src.srp_correction import PatchSRPCorrection
 
-model = NystromSRPAggregator(
-    in_dim=1536,
-    embed_dim=384,
-    depth=4,
-    num_heads=6,
-    num_classes=2,
-    beta_patch_mode="signed_gated",
-    srp_mode="post_agg_signed_gated",
-    delta_scale=1.0,
-    gate_hidden_dim=16,
+srp = PatchSRPCorrection(
+    768,
+    hidden_dim=32,
+    delta_scale=2.0,
+)
+
+# y: (B, N, D), containing patch-token attention updates
+z = srp(
+    y,
+    neighbor_index,
+    neighbor_mask,
+    neighbor_weight=neighbor_weight,
 )
 ```
 
-For a dense ViT-style grid attention block, use
-`src.srp_patch_attention.PatchSRPAttention`. See
-[docs/INTEGRATION.md](docs/INTEGRATION.md) for the required neighbor graph,
-`h_local` signal, and invariants for safe integration.
-
-## Reproduce the Tables
-
-Run the full manifests:
-
-```bash
-python scripts/run_manifest.py configs/paper_classification.tsv
-python scripts/run_manifest.py configs/paper_tcga_survival.tsv
-python scripts/run_manifest.py configs/paper_architecture_ablation.tsv
-python scripts/run_manifest.py configs/paper_design_ablation.tsv
-python scripts/run_manifest.py configs/paper_patch_encoder_ablation.tsv
-```
-
-Collect main-table rerun metrics:
-
-```bash
-python scripts/collect_paper_results.py --strict
-```
+For a ready TransMIL-style model, use
+`slide_level_srp.src.srp_aggregator.NystromSRPAggregator`. For dense MHSA,
+SPAN, LongNet, and custom architectures, see
+[docs/INTEGRATION.md](docs/INTEGRATION.md) and
+[docs/ARCHITECTURES.md](docs/ARCHITECTURES.md).
 
 ## Repository Map
 
 | Path | Purpose |
 |---|---|
-| `slide_level_srp/` | Gated SRP, Diff comparator, slide/TCGA trainers, and dataset adapters. |
-| `slide_level/` | Baseline TransMIL/XSA components reused by the SRP trainer. |
-| `patch_level_adp/` | ADP raw-RGB ViT trainer for the architecture-choice ablation. |
-| `src/` | PANDA and ADP model/data helpers, full-softmax SRP attention, and comparators. |
-| `examples/` | Minimal standalone snippets for calling Gated SRP modules. |
-| `configs/` | Runnable manifests for main results and ablations. |
-| `scripts/` | Manifest runner, H5 validator, embedding extraction template, and result collector. |
-| `results/` | Reference result tables. |
-| `docs/` | Method, integration, dataset, embedding, reproduction, and result details. |
+| `slide_level_srp/` | Slide-level attention, GatedSRP gate, scalable correction, baselines, trainers, and data adapters. |
+| `slide_level/` | Shared Nyström/TransMIL components. |
+| `patch_level_adp/` | Raw-RGB ADP patch trainer used for the attention-operator comparison. |
+| `src/` | PANDA/ADP helpers and fixed-grid attention modules. |
+| `configs/` | Explicit five-seed command manifests for every released evaluation. |
+| `data/labels/` | Redistributable labels used by public datasets; KGH is excluded. |
+| `scripts/` | Dataset download, AtlasPatch extraction, validation, execution, and result collection. |
+| `results/` | Aggregate and per-seed reference tables. |
+| `website/` | Static project site suitable for GitHub Pages. |
 
-## Reference Tables
+## Checkpoints and Citation
 
-- [classification_main_table.tsv](results/classification_main_table.tsv)
-- [tcga_survival_main_table.tsv](results/tcga_survival_main_table.tsv)
-- [ablation_architecture_choice.tsv](results/ablation_architecture_choice.tsv)
-- [ablation_fixed_projection.tsv](results/ablation_fixed_projection.tsv)
-- [ablation_gate_range.tsv](results/ablation_gate_range.tsv)
-- [ablation_gate_gradients.tsv](results/ablation_gate_gradients.tsv)
-- [ablation_gate_factorization.tsv](results/ablation_gate_factorization.tsv)
-- [ablation_gate_initialization.tsv](results/ablation_gate_initialization.tsv)
-- [ablation_patch_encoder.tsv](results/ablation_patch_encoder.tsv)
+No pretrained slide checkpoint or GatedSRP-specific pretraining is required.
+The manifests train each task model and write `best.pt` locally. Shipping every
+seed checkpoint in Git would be unnecessarily large; the policy and artifact
+locations are described in [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
 
-## Citation
-
-Citation metadata will be added after publication details are available.
+Citation metadata will be added when publication details are available.
 
 ## License
 
-This repository is released under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International. See [LICENSE](LICENSE).
+This repository is available under the
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](LICENSE)
+license.

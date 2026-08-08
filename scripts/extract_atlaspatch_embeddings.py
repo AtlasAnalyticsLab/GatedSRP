@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--encoder",
         default="uni_v2",
-        help="AtlasPatch patch feature extractor name. The reported main runs use uni_v2.",
+        help="AtlasPatch patch feature extractor name. The primary runs use uni_v2.",
     )
     parser.add_argument("--cohort", choices=["KIRC", "KIRP", "LUAD", "STAD", "UCEC"])
     parser.add_argument("--label-csv", type=Path, help="Optional label manifest used to stage selected slides.")

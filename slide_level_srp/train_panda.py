@@ -1,9 +1,9 @@
 """PANDA single-run training entry point.
 
-The main PANDA table uses the TransMIL-style `--arch transmil` path so NA,
-XSA, Diff, and Gated SRP share the same slide-level scaffold. The architecture
-ablation also exposes `--arch vit4`, a dense set-style ViT over native-length
-PANDA UNI-v2 slide features.
+The PANDA task comparison uses the TransMIL-style `--arch transmil` path so NA,
+XSA, Diff, and Gated SRP share the same slide-level scaffold. The
+attention-operator comparison also exposes `--arch vit4`, a dense set-style
+ViT over native-length PANDA UNI-v2 slide features.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ from src.data_panda import (
 )
 from src.vit_panda import PandaSlideViT
 from slide_level_srp.src.diff_transformer import DiffBlock, RMSNorm
+from slide_level_srp.src.mil_baselines import dsmil_dual_stream_cross_entropy
+from slide_level_srp.src.runtime_profile import RuntimeProfiler
 
 
 # --- Helpers ------------------------------------------------------------
@@ -47,11 +49,23 @@ _FIXED_BETA_MODES = {"srp_beta2", "srp_fixed_beta"}
 _LEARNED_R_SIGNED_GATE_MODES = {"srp_signed_gated_learned_r"}
 _RCD_MODES = {"srp_rcd", "srp_rcd_learned_r"}
 _CAPACITY_CONTROL_MODES = {"srp_mlp_control"}
+_MIL_BASELINE_MODES = {"abmil", "dsmil", "official_transmil"}
+_DENSE_MODES = {"dense_mhsa", "dense_mhsa_srp"}
+_DENSE_SRP_MODES = {"dense_mhsa_srp"}
+_OFFICIAL_ARCH_MODES = {
+    "official_span_baseline",
+    "official_span_srp",
+    "official_longnet_baseline",
+    "official_longnet_srp",
+}
+_OFFICIAL_ARCH_SRP_MODES = {"official_span_srp", "official_longnet_srp"}
 _METHOD_SURFACE_MODES = (
     _SIGNED_GATE_MODES
     | _LEARNED_R_SIGNED_GATE_MODES
     | _RCD_MODES
     | _CAPACITY_CONTROL_MODES
+    | _DENSE_SRP_MODES
+    | _OFFICIAL_ARCH_SRP_MODES
 )
 _TRANSMIL_NEIGHBOR_SRP_MODES = (
     {"baseline"}
@@ -60,6 +74,7 @@ _TRANSMIL_NEIGHBOR_SRP_MODES = (
     | _LEARNED_R_SIGNED_GATE_MODES
     | _RCD_MODES
     | _CAPACITY_CONTROL_MODES
+    | _DENSE_SRP_MODES
 )
 
 
@@ -70,7 +85,7 @@ def transmil_srp_mode_for_panda_mode(mode: str) -> str:
         "srp_beta2": "post_agg",
         # Audit-friendly alias for fixed beta values other than 2.0.  The
         # existing srp_beta2 path already accepted --beta <value>; the new
-        # name avoids implying beta=2 in fixed-beta ablation manifests.
+        # name avoids implying beta=2 in fixed-beta variant manifests.
         "srp_fixed_beta": "post_agg",
         "srp_signed_gated": "post_agg_signed_gated",
         "srp_signed_gated_pre_q": "pre_q_signed_gated",
@@ -138,7 +153,7 @@ def compute_panda_metrics(y_true: np.ndarray, y_pred: np.ndarray,
         out["binary_auc"] = float("nan")
     # global-seed tables use a common F1 / ACC / AUC surface across datasets.
     # PANDA is multiclass ordinal, so use macro OvR AUC for the unified AUC
-    # column while retaining Kaggle kappa and binary AUC as supplemental.
+    # column while retaining Kaggle kappa and binary AUC as additional metrics.
     try:
         out["macro_auc"] = float(
             roc_auc_score(
@@ -241,7 +256,7 @@ class PandaDiffTransformerClassifier(torch.nn.Module):
 
 
 def build_model(args) -> torch.nn.Module:
-    # Default in_dim=1536 preserves UNI-v2.  Encoder-transfer ablations set
+    # Default in_dim=1536 preserves UNI-v2.  Encoder-transfer variants set
     # this explicitly so the model projection and the H5 feature validation
     # share one reported dimensionality.
     in_dim = int(getattr(args, "in_dim", UNI_DIM))
@@ -304,8 +319,21 @@ def build_model(args) -> torch.nn.Module:
         )
     elif args.arch == "transmil":
         from slide_level.src.aggregator import NystromXSAggregator
+        from slide_level_srp.src.dense_srp_aggregator import DenseAttentionSRPAggregator
         from slide_level_srp.src.diff_transformer import NystromDiffTransformerAggregator
+        from slide_level_srp.src.mil_baselines import build_mil_baseline_aggregator
+        from slide_level_srp.src.official_architectures import (
+            OfficialGigaPathLongNetAggregator,
+            OfficialSPANAggregator,
+        )
         from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
+
+        if args.mode in _MIL_BASELINE_MODES:
+            return build_mil_baseline_aggregator(
+                kind=args.mode,
+                in_dim=in_dim,
+                num_classes=N_ISUP,
+            )
 
         if args.mode == "xsa_all_hard":
             # Hard XSA is the original XSA comparator: fixed alpha buffers change
@@ -315,6 +343,17 @@ def build_model(args) -> torch.nn.Module:
                 num_heads=args.num_heads, num_landmarks=args.num_landmarks,
                 num_classes=N_ISUP,
                 alpha_cls_mode="one", alpha_patch_mode="one",
+                alpha_init=1.0,
+                drop_path_rate=args.drop_path,
+                pinv_iterations=6, checkpoint_mode="off",
+            )
+
+        if args.mode == "nystrom_na":
+            return NystromXSAggregator(
+                in_dim=in_dim, embed_dim=args.embed_dim, depth=4,
+                num_heads=args.num_heads, num_landmarks=args.num_landmarks,
+                num_classes=N_ISUP,
+                alpha_cls_mode="zero", alpha_patch_mode="zero",
                 alpha_init=1.0,
                 drop_path_rate=args.drop_path,
                 pinv_iterations=6, checkpoint_mode="off",
@@ -332,6 +371,51 @@ def build_model(args) -> torch.nn.Module:
                 pinv_iterations=6, checkpoint_mode="off",
             )
 
+        if args.mode in _DENSE_MODES:
+            return DenseAttentionSRPAggregator(
+                in_dim=in_dim,
+                embed_dim=args.embed_dim,
+                depth=4,
+                num_heads=args.num_heads,
+                num_classes=N_ISUP,
+                drop_path_rate=args.drop_path,
+                checkpoint_mode="off",
+                use_srp=args.mode == "dense_mhsa_srp",
+                delta_scale=args.delta_scale,
+                gate_hidden_dim=args.gate_hidden_dim,
+                detach_gate_inputs=not args.no_detach_gate_inputs,
+                gate_output_init=args.gate_output_init,
+                gate_output_init_scale=args.gate_output_init_scale,
+                gate_init_beta0=args.gate_init_beta0,
+                gate_activation=args.gate_activation,
+                gate_activation_temperature=args.gate_activation_temperature,
+                gate_factorization=args.gate_factorization,
+                gate_delta_mode=args.gate_delta_mode,
+                gate_count_features=args.gate_count_features,
+                retain_gate_beta_for_loss=args.gate_l2_reg > 0.0,
+            )
+
+        if args.mode in _OFFICIAL_ARCH_MODES:
+            if args.mode.startswith("official_span"):
+                return OfficialSPANAggregator(
+                    in_dim=in_dim,
+                    num_classes=N_ISUP,
+                    target="panda",
+                    use_srp=args.mode.endswith("_srp"),
+                    gate_hidden_dim=args.gate_hidden_dim,
+                    delta_scale=args.delta_scale,
+                )
+            return OfficialGigaPathLongNetAggregator(
+                in_dim=in_dim,
+                embed_dim=args.embed_dim,
+                depth=args.official_longnet_depth,
+                num_classes=N_ISUP,
+                use_srp=args.mode.endswith("_srp"),
+                drop_path_rate=args.drop_path,
+                gate_hidden_dim=args.gate_hidden_dim,
+                delta_scale=args.delta_scale,
+            )
+
         if args.mode in _TRANSMIL_NEIGHBOR_SRP_MODES:
             if args.mode == "baseline":
                 beta_patch_mode = "zero"
@@ -346,7 +430,7 @@ def build_model(args) -> torch.nn.Module:
                 beta_patch_mode = "zero"
                 beta_init = 0.0
             elif args.mode in _CAPACITY_CONTROL_MODES:
-                # Matched-capacity ablation: add the same kind of learned
+                # Matched-capacity variant: add the same kind of learned
                 # adapter surface without spatial SRP geometry.  The shared
                 # SRP module requires beta disabled for this mode by design.
                 beta_patch_mode = "zero"
@@ -375,7 +459,11 @@ def build_model(args) -> torch.nn.Module:
                 gate_activation=args.gate_activation,
                 gate_activation_temperature=args.gate_activation_temperature,
                 gate_factorization=args.gate_factorization,
+                gate_delta_mode=args.gate_delta_mode,
                 gate_count_features=args.gate_count_features,
+                srp_context_impl=args.srp_context_impl,
+                srp_correction_chunk_size=args.srp_correction_chunk_size,
+                retain_gate_beta_for_loss=args.gate_l2_reg > 0.0,
                 rcd_adapter_kind=args.rcd_adapter_kind,
                 rcd_rank=args.rcd_rank,
                 learned_r_hidden_dim=args.learned_r_hidden_dim,
@@ -383,7 +471,7 @@ def build_model(args) -> torch.nn.Module:
 
         raise ValueError(
             f"PANDA TransMIL does not support mode={args.mode!r}. "
-            "Supported paper methods are baseline, xsa_all_hard, "
+            "Supported comparison methods are baseline, xsa_all_hard, "
             "diff_transformer, and srp_signed_gated."
         )
     else:
@@ -525,10 +613,14 @@ def is_method_param(name: str, mode: str) -> bool:
             or name.startswith("context_scorer.")
         )
     if mode in _CAPACITY_CONTROL_MODES:
-        # The capacity-control branch is the method surface for that ablation:
+        # The capacity-control branch is the method surface for that variant:
         # it should be counted/frozen independently from the shared TransMIL
         # backbone during any future two-stage probe.
         return ".mlp_control." in name or name.startswith("mlp_control.")
+    if mode in _DENSE_SRP_MODES:
+        return ".gate." in name or name.startswith("gate.")
+    if mode in _OFFICIAL_ARCH_SRP_MODES:
+        return ".srp_modules." in name or name.startswith("srp_modules.")
     return ("alpha_cls" in name or "alpha_patch" in name or "beta_patch" in name)
 
 
@@ -560,6 +652,8 @@ def is_method_no_decay(name: str, mode: str) -> bool:
             and (name.endswith(".bias") or name.endswith("_diag_delta"))
         )
     if mode in _CAPACITY_CONTROL_MODES:
+        return is_method_param(name, mode) and name.endswith(".bias")
+    if mode in (_DENSE_SRP_MODES | _OFFICIAL_ARCH_SRP_MODES):
         return is_method_param(name, mode) and name.endswith(".bias")
     return ("alpha_cls" in name or "alpha_patch" in name or "beta_patch" in name)
 
@@ -710,6 +804,19 @@ def model_forward(model, batch, device, arch: str,
         coords = coords.to(device, non_blocking=True) if coords is not None else None
         return model(feats, mask, coords=coords)
     if arch == "transmil":
+        if mode in _OFFICIAL_ARCH_MODES:
+            nbi = batch["neighbor_index"].to(device, non_blocking=True)
+            nbm = batch["neighbor_mask"].to(device, non_blocking=True)
+            nbw = batch.get("neighbor_weight")
+            nbw = nbw.to(device, non_blocking=True) if nbw is not None else None
+            coords = batch["coords"].to(device, non_blocking=True)
+            return model(
+                feats,
+                neighbor_index=nbi,
+                neighbor_mask=nbm,
+                neighbor_weight=nbw,
+                coords=coords,
+            )
         if mode in _TRANSMIL_NEIGHBOR_SRP_MODES:
             nbi = batch["neighbor_index"].to(device, non_blocking=True)
             nbm = batch["neighbor_mask"].to(device, non_blocking=True)
@@ -814,9 +921,13 @@ def parse_args():
     p.add_argument("--arch", type=str, default="vit4",
                    choices=["vit4", "vit12", "transmil"])
     p.add_argument("--mode", type=str, default="baseline",
-                   choices=["baseline", "xsa_all_hard", "srp_beta2",
+                   choices=["baseline", "nystrom_na", "xsa_all_hard", "srp_beta2",
                             "srp_fixed_beta", "srp_mlp_control",
                             "diff_transformer",
+                            "abmil", "dsmil", "official_transmil",
+                            "dense_mhsa", "dense_mhsa_srp",
+                            "official_span_baseline", "official_span_srp",
+                            "official_longnet_baseline", "official_longnet_srp",
                             "srp_signed_gated", "srp_signed_gated_pre_q",
                             "srp_signed_gated_pre_k",
                             "srp_signed_gated_learned_r",
@@ -855,7 +966,7 @@ def parse_args():
                         "signed-projection range [-1, +1] (no reflection).")
     p.add_argument("--gate_hidden_dim", type=int, default=16,
                    help="Hidden width of the gate's token MLP. Cheap; "
-                        "16 matches the released protocol and is used in tests.")
+                        "16 matches the reference protocol and is used in tests.")
     p.add_argument("--gate_output_init", type=str, default="zero",
                    choices=["zero", "tiny_normal", "xavier_uniform",
                             "kaiming_uniform", "orthogonal", "constant_beta"],
@@ -870,6 +981,11 @@ def parse_args():
                    help="Bounded signed activation mapping raw gate logits to [-1,1].")
     p.add_argument("--gate_activation_temperature", type=float, default=1.0,
                    help="Temperature applied as raw/temperature before gate activation.")
+    p.add_argument(
+        "--gate_delta_mode",
+        default="fixed",
+        choices=["fixed", "direct_beta_softclip"],
+    )
     p.add_argument("--gate_factorization", type=str, default="full",
                    choices=["full", "token_only", "head_only", "no_bias"],
                    help="Token/head factorization for the signed-gate surface. "
@@ -893,7 +1009,7 @@ def parse_args():
     p.add_argument("--srp_freeze_epochs", type=int, default=0,
                    help="Enable two-stage training by freezing PANDA "
                         "SRP/gate/RCD method parameters during the base stage. "
-                        "Use the same value as --epochs for the reported "
+                        "Use the same value as --epochs for the reference "
                         "15+5 protocol.")
     p.add_argument("--stage2_epochs", type=int, default=0,
                    help="Extra two-stage epochs after the frozen-method base "
@@ -913,7 +1029,7 @@ def parse_args():
                         "gradients flow through gate diagnostic inputs "
                         "(cos_yr / y_norms / log_norm_y_mean) into y. "
                         "Default is the detached regime; this flag enables "
-                        "the live-input ablation.")
+                        "the live-input variant.")
     p.add_argument("--srp_r_target", type=str, default="slide_mean",
                        choices=["slide_mean", "knn8"],
                        help="SRP r̂ projection target. 'slide_mean' uses the "
@@ -930,12 +1046,24 @@ def parse_args():
                    choices=["cumulative", "ring"],
                    help="Use all offsets inside the window or only the outer ring.")
     p.add_argument("--neighbor_source", type=str, default="real",
-                   choices=["real", "shuffled"],
+                   choices=["real", "shuffled", "nearest_retained"],
                    help="Use spatial neighbors or same-slide shuffled neighbor identities.")
     p.add_argument("--neighbor_shuffle_seed", type=int, default=0)
     p.add_argument("--neighbor_weighting", type=str, default="uniform",
                    choices=["uniform", "gaussian", "inverse_distance"])
     p.add_argument("--neighbor_weight_sigma", type=float, default=1.0)
+    p.add_argument(
+        "--subsample_mode",
+        default="coord_uniform",
+        choices=["coord_uniform", "random_retained"],
+    )
+    p.add_argument("--subsample_seed", type=int, default=None)
+    p.add_argument(
+        "--srp_context_impl",
+        default="streaming_mean",
+        choices=["streaming_mean", "stacked"],
+    )
+    p.add_argument("--srp_correction_chunk_size", type=int, default=32768)
     p.add_argument("--pos_mode", type=str, default="none",
                    choices=["none", "coord_mlp"],
                    help="PANDA positional policy. Default none preserves vit4.")
@@ -946,6 +1074,7 @@ def parse_args():
     p.add_argument("--num_heads", type=int, default=6)
     p.add_argument("--num_landmarks", type=int, default=64,
                    help="Nyström landmarks (transmil only).")
+    p.add_argument("--official_longnet_depth", type=int, default=12)
     p.add_argument("--ln_specialization", type=str, default="shared",
                    choices=["shared", "cls_patch"],
                    help="LayerNorm specialization for the TransMIL SRP "
@@ -970,6 +1099,11 @@ def parse_args():
     p.add_argument("--weight_decay", type=float, default=0.05)
     p.add_argument("--warmup_ratio", type=float, default=0.05)
     p.add_argument("--num_workers", type=int, default=2)
+    p.add_argument(
+        "--profile_runtime",
+        action="store_true",
+        help="Write synchronized phase throughput and peak CUDA memory.",
+    )
 
     p.add_argument("--split_mode", type=str, default="cv_fold",
                    choices=["cv_fold", "global_seed_holdout"],
@@ -992,7 +1126,7 @@ def parse_args():
     p.add_argument("--fold_seed", type=int, default=0)
     # Validation: PANDA used to use the held-out fold for
     # both best-epoch selection AND final reporting (no inner val). That
-    # makes reported metrics optimistically biased on absolute scale
+    # makes evaluation metrics optimistically biased on absolute scale
     # (paired-Δ vs same-fold baseline is unaffected). The fix carves
     # an inner-val split out of the training pool for selection; the
     # held-out fold becomes the actual untouched test.
@@ -1021,8 +1155,18 @@ def parse_args():
     if args.mode in {"srp_fixed_beta", "srp_mlp_control"} and args.arch != "transmil":
         raise SystemExit(
             f"[parse_args] --mode {args.mode} is defined for "
-            "--arch transmil in the reported PANDA ablation expansion. "
+            "--arch transmil in the PANDA variant matrix. "
             "Use srp_beta2 for the legacy ViT fixed-beta path."
+        )
+    transmil_only_modes = (
+        _MIL_BASELINE_MODES
+        | _DENSE_MODES
+        | _OFFICIAL_ARCH_MODES
+        | {"nystrom_na"}
+    )
+    if args.mode in transmil_only_modes and args.arch != "transmil":
+        raise SystemExit(
+            f"[parse_args] --mode {args.mode} requires --arch transmil."
         )
     if (
         args.ln_specialization != "shared"
@@ -1095,6 +1239,26 @@ def parse_args():
             f"[parse_args] --neighbor_window must be an odd integer >= 3, "
             f"got {args.neighbor_window}."
         )
+    if args.subsample_seed is None:
+        args.subsample_seed = (
+            args.global_seed if args.global_seed is not None else args.seed
+        )
+    if args.srp_correction_chunk_size < 0:
+        raise SystemExit(
+            "[parse_args] --srp_correction_chunk_size must be non-negative."
+        )
+    if args.official_longnet_depth <= 0:
+        raise SystemExit("[parse_args] --official_longnet_depth must be positive.")
+    if args.neighbor_source == "nearest_retained":
+        if args.n_max is None or args.n_max > 4096:
+            raise SystemExit(
+                "[parse_args] nearest_retained requires --n_max no larger than 4096."
+            )
+        if args.subsample_mode != "random_retained":
+            raise SystemExit(
+                "[parse_args] nearest_retained requires "
+                "--subsample_mode random_retained."
+            )
     if args.gate_l2_reg < 0.0:
         raise SystemExit(
             f"[parse_args] --gate_l2_reg must be >= 0, got {args.gate_l2_reg}."
@@ -1233,6 +1397,8 @@ def main() -> None:
             neighbor_weight_sigma=args.neighbor_weight_sigma,
             feature_key=args.feature_key,
             feature_dim=args.in_dim,
+            subsample_mode=args.subsample_mode,
+            subsample_seed=args.subsample_seed,
         )
         split_metadata.update({
             "global_seed": int(args.global_seed),
@@ -1305,6 +1471,8 @@ def main() -> None:
                 neighbor_weight_sigma=args.neighbor_weight_sigma,
                 feature_key=args.feature_key,
                 feature_dim=args.in_dim,
+                subsample_mode=args.subsample_mode,
+                subsample_seed=args.subsample_seed,
             )
             print(f"[{args.run_name}] 3-way split (F1 fix): "
                   f"train_slides={len(train_loader.dataset)} "
@@ -1327,6 +1495,8 @@ def main() -> None:
                 neighbor_weight_sigma=args.neighbor_weight_sigma,
                 feature_key=args.feature_key,
                 feature_dim=args.in_dim,
+                subsample_mode=args.subsample_mode,
+                subsample_seed=args.subsample_seed,
             )
             test_loader = val_loader  # explicit alias — both point at same data
             print(f"[{args.run_name}] LEGACY split (selection==test, F1 bug): "
@@ -1395,6 +1565,7 @@ def main() -> None:
     # --- W&B -----------------------------------------------------------
     out_dir = Path(args.out_dir) / args.run_name
     out_dir.mkdir(parents=True, exist_ok=True)
+    runtime = RuntimeProfiler(enabled=args.profile_runtime, device=device)
     wandb.init(
         project=args.wandb_project, name=args.run_name, mode=args.wandb_mode,
         dir=str(out_dir),
@@ -1473,6 +1644,7 @@ def main() -> None:
         pbar = tqdm(train_loader,
                     desc=f"[{args.run_name}] {stage_name} ep {epoch+1}/{total_train_epochs}",
                     leave=False, mininterval=1.0)
+        runtime.start("train")
         for bi, batch in enumerate(pbar):
             labels = batch["label"].to(device, non_blocking=True)
 
@@ -1499,7 +1671,12 @@ def main() -> None:
                 logits = model_forward(model, batch, device, args.arch,
                                        srp_r_target=args.srp_r_target,
                                        mode=args.mode)
-                ce_loss = F.cross_entropy(logits.float(), labels)
+                if args.mode == "dsmil":
+                    ce_loss = dsmil_dual_stream_cross_entropy(
+                        model, logits.float(), labels,
+                    )
+                else:
+                    ce_loss = F.cross_entropy(logits.float(), labels)
                 # gate-containment mirrors slide_level_srp/train.py: penalize the
                 # realized signed-gate beta surface, not raw logits.  A missing
                 # cache means the command is misconfigured or the gate path did
@@ -1558,6 +1735,7 @@ def main() -> None:
                         wandb.log(gate_payload, step=global_step)
                 stage_step += 1
                 global_step += 1
+        runtime.stop(n_slides=len(train_loader.dataset))
 
         train_y = np.concatenate(ep_y)
         train_pred = np.concatenate(ep_pred)
@@ -1570,9 +1748,11 @@ def main() -> None:
             train_metrics["gate_l2_penalty"] = args.gate_l2_reg * train_metrics["gate_l2"]
 
         # --- Val + best-checkpoint -----------------------------------
+        runtime.start("validation")
         val_metrics, _ = evaluate(model, val_loader, device, args.arch,
                                   srp_r_target=args.srp_r_target,
                                   mode=args.mode)
+        runtime.stop(n_slides=len(val_loader.dataset))
 
         wandb.log({f"train/{k}": v for k, v in train_metrics.items()}, step=global_step)
         wandb.log({f"val/{k}":   v for k, v in val_metrics.items()},   step=global_step)
@@ -1617,12 +1797,15 @@ def main() -> None:
     ckpt = torch.load(best_ckpt, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model"])
 
+    runtime.start("test")
     final_metrics, per_slide, final_gate_stats = evaluate(
         model, test_loader, device, args.arch,
         srp_r_target=args.srp_r_target,
         mode=args.mode,
         collect_gate_stats=True,
     )
+    runtime.stop(n_slides=len(test_loader.dataset))
+    runtime.write(out_dir / "runtime_profile.json")
     print(
         f"[{args.run_name}] FINAL test: κ_quad={final_metrics['kappa_quad']:.4f} "
         f"κ_lin={final_metrics['kappa_lin']:.4f} "

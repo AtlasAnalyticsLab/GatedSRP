@@ -1,4 +1,4 @@
-"""TCGA-to-Atlas survival trainer for reported gated-SRP experiments.
+"""TCGA-to-Atlas survival trainer for GatedSRP evaluations.
 
 This is an additive entrypoint rather than a mode inside ``train.py``.  The
 classification path stays stable while survival gets its own case-level split
@@ -44,7 +44,7 @@ from slide_level_srp.data_tcga_survival import (
     tcga_survival_inventory,
 )
 from slide_level_srp.train import (
-    _ABLATIONS,
+    _VARIANTS,
     _build_model,
     _checked_fold_assignment,
     _model_forward,
@@ -53,6 +53,7 @@ from slide_level_srp.train import (
     method_parameter_summary,
     set_seed,
 )
+from slide_level_srp.src.runtime_profile import RuntimeProfiler
 
 
 def survival_nll_loss(
@@ -65,7 +66,7 @@ def survival_nll_loss(
     For an observed event in bin ``y``, the likelihood is survival through
     bins ``< y`` and event hazard at ``y``.  For a censored case in bin ``y``,
     the likelihood is survival through bins ``<= y``.  This is the CLAM /
-    2DMamba-style objective used in the approved survival plan.
+    2DMamba-style objective used by the survival protocol.
     """
     hazards = torch.sigmoid(logits.float()).clamp(min=1e-7, max=1.0 - 1e-7)
     event = event.float().view(-1)
@@ -155,7 +156,7 @@ def evaluate_survival(
     *,
     device,
     backend: str,
-    ablation_spec: dict,
+    variant_spec: dict,
     autocast_dtype=torch.bfloat16,
 ) -> tuple[dict, list[dict], list[dict]]:
     model.eval()
@@ -169,7 +170,7 @@ def evaluate_survival(
             with autocast_ctx(device, autocast_dtype):
                 logits = _model_forward(
                     model, batch, backend, device,
-                    ablation_spec=ablation_spec,
+                    variant_spec=variant_spec,
                 )
                 loss = survival_nll_loss(logits, event, time_bin)
             risk = risk_from_logits(logits)
@@ -233,7 +234,14 @@ def parse_args():
     parser.add_argument("--drop_nonpositive_time", action="store_true", default=True)
     parser.add_argument("--keep_nonpositive_time", action="store_false", dest="drop_nonpositive_time")
 
-    parser.add_argument("--ablation", required=True, choices=list(_ABLATIONS.keys()))
+    parser.add_argument(
+        "--variant",
+        dest="variant",
+        metavar="VARIANT",
+        required=True,
+        choices=list(_VARIANTS.keys()),
+        help="Model variant used for this survival run.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--grad_accum", type=int, default=1)
@@ -241,6 +249,7 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--warmup_ratio", type=float, default=0.05)
     parser.add_argument("--num_workers", type=int, default=2)
+    parser.add_argument("--profile_runtime", action="store_true")
     parser.add_argument("--train_cap", type=int, default=None)
     parser.add_argument("--val_cap", type=int, default=None)
     parser.add_argument("--test_cap", type=int, default=None)
@@ -248,6 +257,7 @@ def parse_args():
     parser.add_argument("--in_dim", type=int, default=1536)
     parser.add_argument("--embed_dim", type=int, default=384)
     parser.add_argument("--depth", type=int, default=4)
+    parser.add_argument("--official_longnet_depth", type=int, default=12)
     parser.add_argument("--num_heads", type=int, default=6)
     parser.add_argument("--num_landmarks", type=int, default=64)
     parser.add_argument("--pinv_iterations", type=int, default=6)
@@ -269,6 +279,11 @@ def parse_args():
     parser.add_argument("--gate_activation", default="tanh",
                         choices=["tanh", "scaled_sigmoid", "sigmoid01", "softsign", "hardtanh", "atan"])
     parser.add_argument("--gate_activation_temperature", type=float, default=1.0)
+    parser.add_argument(
+        "--gate_delta_mode",
+        default="fixed",
+        choices=["fixed", "direct_beta_softclip"],
+    )
     parser.add_argument("--gate_factorization", default="full",
                         choices=["full", "token_only", "head_only", "no_bias"])
     parser.add_argument("--gate_count_features", default="legacy",
@@ -282,10 +297,26 @@ def parse_args():
 
     parser.add_argument("--neighbor_window", type=int, default=3)
     parser.add_argument("--neighbor_shell", default="cumulative", choices=["cumulative", "ring"])
-    parser.add_argument("--neighbor_source", default="real", choices=["real", "shuffled"])
+    parser.add_argument(
+        "--neighbor_source",
+        default="real",
+        choices=["real", "shuffled", "nearest_retained"],
+    )
     parser.add_argument("--neighbor_shuffle_seed", type=int, default=None)
     parser.add_argument("--neighbor_weighting", default="uniform", choices=["uniform", "gaussian", "inverse_distance"])
     parser.add_argument("--neighbor_weight_sigma", type=float, default=1.0)
+    parser.add_argument(
+        "--subsample_mode",
+        default="coord_uniform",
+        choices=["coord_uniform", "random_retained"],
+    )
+    parser.add_argument("--subsample_seed", type=int, default=None)
+    parser.add_argument(
+        "--srp_context_impl",
+        default="streaming_mean",
+        choices=["streaming_mean", "stacked"],
+    )
+    parser.add_argument("--srp_correction_chunk_size", type=int, default=32768)
     args = parser.parse_args()
 
     if args.grad_accum <= 0:
@@ -294,7 +325,7 @@ def parse_args():
         if args.fold is None:
             raise SystemExit("--fold is required when --split_mode case_level_5fold")
     else:
-        # For the reported sweep the global seed is the single source of
+        # For the five-seed sweep the global seed is the single source of
         # split randomness.  Falling back to --seed keeps ad-hoc runs concise
         # while the generated manifests still write --global_seed explicitly.
         if args.global_seed is None:
@@ -305,17 +336,34 @@ def parse_args():
         raise SystemExit(f"--neighbor_window must be odd and >=3, got {args.neighbor_window}")
     if args.neighbor_shuffle_seed is None:
         args.neighbor_shuffle_seed = args.seed
+    if args.subsample_seed is None:
+        args.subsample_seed = args.global_seed if args.global_seed is not None else args.seed
+    if args.srp_correction_chunk_size < 0:
+        raise SystemExit("--srp_correction_chunk_size must be non-negative")
+    if args.official_longnet_depth <= 0:
+        raise SystemExit("--official_longnet_depth must be positive")
+    if args.neighbor_source == "nearest_retained":
+        caps = (args.train_cap, args.val_cap, args.test_cap)
+        if any(cap is None or cap > 4096 for cap in caps):
+            raise SystemExit(
+                "nearest_retained requires explicit train/val/test caps <= 4096"
+            )
+        if args.subsample_mode != "random_retained":
+            raise SystemExit(
+                "nearest_retained requires --subsample_mode random_retained"
+            )
     if args.pos_mode == "none":
         args.no_ppeg = True
     if args.n_bins < 2:
         raise SystemExit(f"--n_bins must be >=2, got {args.n_bins}")
     args.num_classes = args.n_bins
+    args.dataset = args.cohort.lower()
     return args
 
 
 def main() -> None:
     args = parse_args()
-    spec = _ABLATIONS[args.ablation]
+    spec = _VARIANTS[args.variant]
     backend = spec["backend"]
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -325,7 +373,7 @@ def main() -> None:
         split_label = f"global_seed={args.global_seed} outer_parts={args.n_folds}"
     print(
         f"[{args.run_name}] TCGA survival cohort={args.cohort} endpoint={args.endpoint} "
-        f"{split_label} ablation={args.ablation} device={device}"
+        f"{split_label} variant={args.variant} device={device}"
     )
     if device.type == "cuda":
         print(f"[{args.run_name}] gpu={torch.cuda.get_device_name(0)}")
@@ -370,6 +418,8 @@ def main() -> None:
         neighbor_shuffle_seed=args.neighbor_shuffle_seed,
         neighbor_weighting=args.neighbor_weighting,
         neighbor_weight_sigma=args.neighbor_weight_sigma,
+        subsample_mode=args.subsample_mode,
+        subsample_seed=args.subsample_seed,
     )
     split_meta = survival_split_metadata(
         records,
@@ -401,6 +451,7 @@ def main() -> None:
 
     out_dir = Path(args.out_dir) / args.run_name
     out_dir.mkdir(parents=True, exist_ok=True)
+    runtime = RuntimeProfiler(enabled=args.profile_runtime, device=device)
     (out_dir / "split_metadata.json").write_text(
         json.dumps(split_meta, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -413,7 +464,7 @@ def main() -> None:
         config={
             **vars(args),
             "backend": backend,
-            "ablation_spec": spec,
+            "variant_spec": spec,
             "split_metadata": split_meta,
             "n_params_total": n_total,
             "n_params_trainable": n_trainable,
@@ -426,7 +477,7 @@ def main() -> None:
             f"split-{args.split_mode}",
             f"fold-{args.fold}",
             f"global-seed-{args.global_seed}",
-            f"ablation-{args.ablation}",
+            f"variant-{args.variant}",
         ],
     )
 
@@ -447,6 +498,7 @@ def main() -> None:
             leave=False,
             mininterval=1.0,
         )
+        runtime.start("train")
         for batch_idx, batch in enumerate(pbar):
             event = batch["event"].to(device, non_blocking=True)
             time_bin = batch["time_bin"].to(device, non_blocking=True)
@@ -465,7 +517,7 @@ def main() -> None:
                     batch,
                     backend,
                     device,
-                    ablation_spec=spec,
+                    variant_spec=spec,
                 )
                 raw_loss = survival_nll_loss(logits, event, time_bin)
                 loss = raw_loss / window_size
@@ -483,15 +535,18 @@ def main() -> None:
                 if global_step % 50 == 0:
                     wandb.log({"train/loss_step": float(raw_loss.item()), "train/lr": lr_now}, step=global_step)
                 global_step += 1
+        runtime.stop(n_slides=len(train_loader.dataset))
 
         train_metrics = {"loss": float(loss_sum / max(1, n_seen))}
+        runtime.start("validation")
         val_metrics, _, _ = evaluate_survival(
             model,
             val_loader,
             device=device,
             backend=backend,
-            ablation_spec=spec,
+            variant_spec=spec,
         )
+        runtime.stop(n_slides=len(val_loader.dataset))
         dt = time.time() - t0
         history.append({
             "epoch": epoch + 1,
@@ -531,15 +586,18 @@ def main() -> None:
         val_loader,
         device=device,
         backend=backend,
-        ablation_spec=spec,
+        variant_spec=spec,
     )
+    runtime.start("test")
     test_metrics, test_slide_rows, test_case_rows = evaluate_survival(
         model,
         test_loader,
         device=device,
         backend=backend,
-        ablation_spec=spec,
+        variant_spec=spec,
     )
+    runtime.stop(n_slides=len(test_loader.dataset))
+    runtime.write(out_dir / "runtime_profile.json")
     metrics = {
         "best_epoch": int(ckpt["epoch"]),
         "val": val_metrics,
@@ -549,7 +607,7 @@ def main() -> None:
         "split_mode": args.split_mode,
         "fold": args.fold,
         "global_seed": args.global_seed,
-        "ablation": args.ablation,
+        "variant": args.variant,
     }
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
     (out_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")

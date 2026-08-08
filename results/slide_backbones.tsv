@@ -1,0 +1,31 @@
+dataset	task	architecture	variant	primary_metric	mean	std	runs
+KIRP	survival	SPAN	baseline	case_c_index	0.703302	0.113281	5
+KIRP	survival	SPAN	gated_srp	case_c_index	0.745357	0.079639	5
+KIRP	survival	Prov-GigaPath LongNet	baseline	case_c_index	0.697362	0.053022	5
+KIRP	survival	Prov-GigaPath LongNet	gated_srp	case_c_index	0.661208	0.113988	5
+KIRP	survival	Dense MHSA	baseline	case_c_index	0.720414	0.150818	5
+KIRP	survival	Dense MHSA	gated_srp	case_c_index	0.719933	0.142271	5
+LUAD	survival	SPAN	baseline	case_c_index	0.570235	0.033450	5
+LUAD	survival	SPAN	gated_srp	case_c_index	0.551612	0.066572	5
+LUAD	survival	Prov-GigaPath LongNet	baseline	case_c_index	0.567980	0.087032	5
+LUAD	survival	Prov-GigaPath LongNet	gated_srp	case_c_index	0.551705	0.055066	5
+LUAD	survival	Dense MHSA	baseline	case_c_index	0.553676	0.031636	5
+LUAD	survival	Dense MHSA	gated_srp	case_c_index	0.556893	0.054202	5
+STAD	survival	SPAN	baseline	case_c_index	0.560833	0.053757	5
+STAD	survival	SPAN	gated_srp	case_c_index	0.573029	0.049059	5
+STAD	survival	Prov-GigaPath LongNet	baseline	case_c_index	0.554806	0.076475	5
+STAD	survival	Prov-GigaPath LongNet	gated_srp	case_c_index	0.561437	0.071502	5
+STAD	survival	Dense MHSA	baseline	case_c_index	0.542164	0.083893	5
+STAD	survival	Dense MHSA	gated_srp	case_c_index	0.559247	0.064006	5
+PANDA	classification	SPAN	baseline	kappa_quad	0.872236	0.008509	5
+PANDA	classification	SPAN	gated_srp	kappa_quad	0.871804	0.004641	5
+PANDA	classification	Prov-GigaPath LongNet	baseline	kappa_quad	0.880048	0.009332	5
+PANDA	classification	Prov-GigaPath LongNet	gated_srp	kappa_quad	0.876736	0.015959	5
+PANDA	classification	Dense MHSA	baseline	kappa_quad	0.876667	0.010970	5
+PANDA	classification	Dense MHSA	gated_srp	kappa_quad	0.876167	0.002874	5
+BRACS	classification	SPAN	baseline	f1	0.432065	0.056978	5
+BRACS	classification	SPAN	gated_srp	f1	0.394949	0.092234	5
+BRACS	classification	Prov-GigaPath LongNet	baseline	f1	0.403259	0.042171	5
+BRACS	classification	Prov-GigaPath LongNet	gated_srp	f1	0.383996	0.046874	5
+BRACS	classification	Dense MHSA	baseline	f1	0.414920	0.091425	5
+BRACS	classification	Dense MHSA	gated_srp	f1	0.427629	0.081946	5

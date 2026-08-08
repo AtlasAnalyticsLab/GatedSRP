@@ -20,7 +20,7 @@ per-role, how much self-component to remove.
 
 Three modes are supported for each role independently:
   "zero"  -> alpha fixed at 0.0  (standard self-attention, XSA disabled)
-  "one"   -> alpha fixed at 1.0  (the paper's hard XSA)
+  "one"   -> alpha fixed at 1.0  (hard XSA)
   "learn" -> alpha is an nn.Parameter initialized at alpha_init (default 1.0)
 
 Notes on stats capture:
@@ -28,8 +28,8 @@ Notes on stats capture:
   tensors into self.last_stats so downstream diagnostics code can compute:
       attn_probs:  (B, H, N, N)  -- needed for CLS self-attention a_{cls,cls}.
       cos_yv_pre:  (B, H, N)     -- cos(y_i, v_i) per token, BEFORE projection.
-                                    This is the paper's "attention similarity
-                                    bias" (cosine between attention output and
+                                    This is the attention-similarity bias
+                                    (cosine between attention output and the
                                     token's own value). Central interpretability
                                     quantity: under alpha=0 this is what a
                                     standard SA produces; under alpha=1 the
@@ -188,7 +188,7 @@ class XSAAttention(nn.Module):
         # Capture diagnostics BEFORE reshaping heads away, since cos(y, v)
         # and the per-head norms are meaningful per head (dim=-1 = head_dim).
         if self._capture_stats:
-            # cos(y, v): paper's central interpretability quantity (the
+            # cos(y, v): the primary interpretability quantity (the
             # "attention similarity bias"). cos(z, v) verifies what XSA
             # actually removed. Both are per (batch, head, token) with
             # dim=-1 = head_dim. F.cosine_similarity uses eps=1e-8 by

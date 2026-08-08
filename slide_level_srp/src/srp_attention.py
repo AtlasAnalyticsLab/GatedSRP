@@ -20,8 +20,8 @@ toggled by `srp_mode`:
     "pre_q_signed_gated" / "pre_k_signed_gated" / "pre_v_signed_gated"
                       learned signed-gated SRP applied to Q, K, or V before
                       Nyström attention. These are the CAM16/CAM17
-                      pre-attention placement ablations inspired by the
-                      gated-attention paper's Q/K/V gate locations.
+                      pre-attention placement variants inspired by the
+                      gated-attention Q/K/V gate locations.
 
 Three structural rules hold in every mode (by design):
   1. CLS (position 0) receives NO direct SRP projection. Its value is
@@ -99,6 +99,7 @@ _SRP_SIGNED_GATE_MODES = (
     "post_agg_signed_gated_learned_r",
 )
 _GATE_COUNT_FEATURES = ("legacy", "rawlog", "normlog", "none")
+_SRP_CONTEXT_IMPLS = ("streaming_mean", "stacked")
 
 
 def moore_penrose_iter_inv(A: torch.Tensor, iters: int = 6) -> torch.Tensor:
@@ -197,6 +198,123 @@ def neighborhood_mean(
     r = s / denom
     r_hat = F.normalize(r, dim=-1, eps=1e-12)
     return r, r_hat, cnt
+
+
+def streaming_neighborhood_mean(
+    v_patch: torch.Tensor,
+    neighbor_index: torch.Tensor,
+    neighbor_mask: torch.Tensor,
+    neighbor_weight: Optional[torch.Tensor] = None,
+    *,
+    slot_chunk: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute the exact local mean without materializing all neighbor values.
+
+    The stacked implementation allocates ``(B,H,N,K,D)``. This implementation
+    accumulates one or a few neighbor slots at a time, preserving the same
+    weighted mean while reducing peak memory to ``O(B*H*N*D)``.
+    """
+
+    if v_patch.ndim != 4:
+        raise ValueError(f"v_patch must be (B,H,N,D), got {tuple(v_patch.shape)}")
+    if neighbor_index.ndim != 3 or neighbor_mask.shape != neighbor_index.shape:
+        raise ValueError(
+            "neighbor_index and neighbor_mask must be aligned rank-3 tensors; "
+            f"got {tuple(neighbor_index.shape)} and {tuple(neighbor_mask.shape)}"
+        )
+    bsz, heads, n_tokens, dim = v_patch.shape
+    if neighbor_index.shape[:2] != (bsz, n_tokens):
+        raise ValueError(
+            f"neighbor_index {tuple(neighbor_index.shape)} is incompatible "
+            f"with v_patch {tuple(v_patch.shape)}"
+        )
+    n_slots = neighbor_index.shape[-1]
+    if neighbor_weight is not None and neighbor_weight.shape != neighbor_index.shape:
+        raise ValueError(
+            f"neighbor_weight {tuple(neighbor_weight.shape)} must match "
+            f"neighbor_index {tuple(neighbor_index.shape)}"
+        )
+    if slot_chunk <= 0:
+        raise ValueError(f"slot_chunk must be positive, got {slot_chunk}")
+
+    numerator = torch.zeros_like(v_patch)
+    denominator = v_patch.new_zeros((bsz, 1, n_tokens, 1))
+    count = neighbor_mask.to(v_patch.dtype).sum(dim=-1).view(bsz, 1, n_tokens, 1)
+    for start in range(0, n_slots, slot_chunk):
+        end = min(start + slot_chunk, n_slots)
+        width = end - start
+        safe_index = neighbor_index[..., start:end].clamp(min=0)
+        gather_index = safe_index[:, None, :, :, None].expand(
+            bsz, heads, n_tokens, width, dim,
+        )
+        gathered = torch.gather(
+            v_patch.unsqueeze(3).expand(bsz, heads, n_tokens, width, dim),
+            dim=2,
+            index=gather_index,
+        )
+        weight = neighbor_mask[..., start:end].to(v_patch.dtype)
+        if neighbor_weight is not None:
+            weight = weight * neighbor_weight[..., start:end].to(v_patch.dtype)
+        weight = weight[:, None, :, :, None]
+        numerator = numerator + (gathered * weight).sum(dim=3)
+        denominator = denominator + weight.sum(dim=3)
+
+    local_mean = numerator / denominator.clamp(min=1.0)
+    local_direction = F.normalize(local_mean, dim=-1, eps=1e-12)
+    return local_mean, local_direction, count
+
+
+def streaming_neighborhood_mean_subset(
+    v_patch: torch.Tensor,
+    neighbor_index: torch.Tensor,
+    neighbor_mask: torch.Tensor,
+    neighbor_weight: Optional[torch.Tensor] = None,
+    *,
+    slot_chunk: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute exact local means for a query subset against all source tokens."""
+
+    if v_patch.ndim != 4:
+        raise ValueError(f"v_patch must be (B,H,N,D), got {tuple(v_patch.shape)}")
+    if neighbor_index.ndim != 3 or neighbor_mask.shape != neighbor_index.shape:
+        raise ValueError(
+            "neighbor_index and neighbor_mask must be aligned rank-3 tensors; "
+            f"got {tuple(neighbor_index.shape)} and {tuple(neighbor_mask.shape)}"
+        )
+    bsz, heads, n_source, dim = v_patch.shape
+    if neighbor_index.shape[0] != bsz:
+        raise ValueError("neighbor_index batch dimension must match v_patch")
+    n_query, n_slots = neighbor_index.shape[1:]
+    if neighbor_weight is not None and neighbor_weight.shape != neighbor_index.shape:
+        raise ValueError("neighbor_weight must match neighbor_index")
+    if slot_chunk <= 0:
+        raise ValueError(f"slot_chunk must be positive, got {slot_chunk}")
+
+    numerator = v_patch.new_zeros((bsz, heads, n_query, dim))
+    denominator = v_patch.new_zeros((bsz, 1, n_query, 1))
+    count = neighbor_mask.to(v_patch.dtype).sum(dim=-1).view(bsz, 1, n_query, 1)
+    for start in range(0, n_slots, slot_chunk):
+        end = min(start + slot_chunk, n_slots)
+        width = end - start
+        safe_index = neighbor_index[..., start:end].clamp(min=0)
+        gather_index = safe_index[:, None, :, :, None].expand(
+            bsz, heads, n_query, width, dim,
+        )
+        gathered = torch.gather(
+            v_patch.unsqueeze(3).expand(bsz, heads, n_source, width, dim),
+            dim=2,
+            index=gather_index,
+        )
+        weight = neighbor_mask[..., start:end].to(v_patch.dtype)
+        if neighbor_weight is not None:
+            weight = weight * neighbor_weight[..., start:end].to(v_patch.dtype)
+        weight = weight[:, None, :, :, None]
+        numerator = numerator + (gathered * weight).sum(dim=3)
+        denominator = denominator + weight.sum(dim=3)
+
+    local_mean = numerator / denominator.clamp(min=1.0)
+    local_direction = F.normalize(local_mean, dim=-1, eps=1e-12)
+    return local_mean, local_direction, count
 
 
 def _gate_num_token_features(mode: str, include_y_norm_mean: bool = False) -> int:
@@ -356,7 +474,11 @@ class NystromSRPAttention(nn.Module):
         gate_activation: str = "tanh",
         gate_activation_temperature: float = 1.0,
         gate_factorization: str = "full",
+        gate_delta_mode: str = "fixed",
         gate_count_features: str = "legacy",
+        srp_context_impl: str = "streaming_mean",
+        srp_correction_chunk_size: int = 32768,
+        retain_gate_beta_for_loss: bool = False,
         # Post-signed-gate refinement methods.  These are consumed only by
         # srp_mode in {"post_agg_rcd", "post_agg_rcd_learned_r"} and are
         # constructed as separate modules so original SRP / signed-gate
@@ -419,6 +541,16 @@ class NystromSRPAttention(nn.Module):
                 "capacity control and must set beta_patch_mode='zero' so "
                 f"the SRP projection path is explicit disabled (got {beta_patch_mode!r})."
             )
+        if srp_context_impl not in _SRP_CONTEXT_IMPLS:
+            raise ValueError(
+                f"srp_context_impl must be one of {_SRP_CONTEXT_IMPLS}, "
+                f"got {srp_context_impl!r}"
+            )
+        if srp_correction_chunk_size < 0:
+            raise ValueError(
+                "srp_correction_chunk_size must be non-negative, got "
+                f"{srp_correction_chunk_size}"
+            )
 
         self.dim = dim
         self.num_heads = num_heads
@@ -430,6 +562,9 @@ class NystromSRPAttention(nn.Module):
         self.srp_mode = srp_mode
         self.pinv_iterations = pinv_iterations
         self.detach_gate_inputs = bool(detach_gate_inputs)
+        self.srp_context_impl = srp_context_impl
+        self.srp_correction_chunk_size = int(srp_correction_chunk_size)
+        self.retain_gate_beta_for_loss = bool(retain_gate_beta_for_loss)
         if gate_count_features not in _GATE_COUNT_FEATURES:
             raise ValueError(
                 f"gate_count_features must be one of {_GATE_COUNT_FEATURES}, "
@@ -462,8 +597,8 @@ class NystromSRPAttention(nn.Module):
         else:
             # "zero" → 0.0, "one" → 1.0, "fixed" → beta_init.
             # "zero"/"one" are legacy shorthand kept for backward compat with
-            # the fixed-beta ablations (baseline, srp_patch_hard). "fixed" is
-            # the general form used by the fixed-beta β-grid ablations.
+            # the fixed-beta variants (baseline, srp_patch_hard). "fixed" is
+            # the general form used by the fixed-beta β-grid variants.
             if beta_patch_mode == "zero":
                 fixed = 0.0
             elif beta_patch_mode == "one":
@@ -518,6 +653,7 @@ class NystromSRPAttention(nn.Module):
                     activation=gate_activation,
                     activation_temperature=gate_activation_temperature,
                     factorization=gate_factorization,
+                    delta_mode=gate_delta_mode,
                 )
             finally:
                 torch.set_rng_state(rng_state_cpu)
@@ -752,7 +888,7 @@ class NystromSRPAttention(nn.Module):
         k_patch_pre = k[:, :, 1 : 1 + N_real, :]
         v_patch_pre = v[:, :, 1 : 1 + N_real, :]
 
-        # --- Pre-attention signed-gated SRP (Q/K/V placement ablations) -
+        # --- Pre-attention signed-gated SRP (Q/K/V placement variants) -
         v_patch_post_pre_v: Optional[torch.Tensor] = None   # populated under pre_v variants
 
         def _apply_pre_attention_signed_gate(
@@ -766,7 +902,7 @@ class NystromSRPAttention(nn.Module):
             This helper intentionally mirrors the post-attention signed
             gate's β_eff construction, but it computes the local redundancy
             direction in the same projection space as the stream being
-            edited.  That keeps the Q, K, and V ablations interpretable and
+            edited.  That keeps the Q, K, and V variants interpretable and
             avoids projecting Q/K against a V-space direction.
             """
             # A disabled gate is an exact identity.  The aggregator uses
@@ -906,10 +1042,26 @@ class NystromSRPAttention(nn.Module):
         ):
             # r̂ from the ORIGINAL v (unmodified even under gated paths;
             # gating does not touch v). Detached by design.
-            neighbor_v_det = gather_neighbors(
-                v_patch_pre.detach(), neighbor_index, neighbor_mask,
+            needs_stacked_neighbors = (
+                self.learned_r_active
+                or self.learned_r_gate_active
+                or self._capture_stats
             )
+            chunk_size = self.srp_correction_chunk_size
+            lazy_chunked_context = (
+                self.srp_mode in _SRP_SIGNED_GATE_MODES
+                and self.gate_active
+                and self.srp_context_impl == "streaming_mean"
+                and chunk_size > 0
+                and N_real > chunk_size
+                and not needs_stacked_neighbors
+                and not self.retain_gate_beta_for_loss
+            )
+            neighbor_v_det = None
             if self.learned_r_active or self.learned_r_gate_active:
+                neighbor_v_det = gather_neighbors(
+                    v_patch_pre.detach(), neighbor_index, neighbor_mask,
+                )
                 if h_local is None:
                     raise ValueError(
                         f"srp_mode={self.srp_mode!r} requires "
@@ -931,7 +1083,21 @@ class NystromSRPAttention(nn.Module):
                     self._last_rcd_stats = {
                         "learned_r_weight": learned_r_weight.detach(),
                     }
+            elif lazy_chunked_context:
+                r_det = None
+                r_hat_det = None
+                cnt = neighbor_mask.to(y.dtype).sum(dim=-1).view(B, 1, N_real, 1)
+            elif self.srp_context_impl == "streaming_mean" and not self._capture_stats:
+                r_det, r_hat_det, cnt = streaming_neighborhood_mean(
+                    v_patch_pre.detach(),
+                    neighbor_index,
+                    neighbor_mask,
+                    neighbor_weight,
+                )
             else:
+                neighbor_v_det = gather_neighbors(
+                    v_patch_pre.detach(), neighbor_index, neighbor_mask,
+                )
                 r_det, r_hat_det, cnt = neighborhood_mean(
                     neighbor_v_det, neighbor_mask, neighbor_weight,
                 )
@@ -940,10 +1106,17 @@ class NystromSRPAttention(nn.Module):
             cnt_for_diag = cnt
             neighbor_v_for_diag = neighbor_v_det
 
-            dot_yr = (y_patch * r_hat_det).sum(dim=-1, keepdim=True)       # (B, H, N, 1)
+            use_chunked_signed_gate = lazy_chunked_context
+            dot_yr = (
+                None
+                if use_chunked_signed_gate
+                else (y_patch * r_hat_det).sum(dim=-1, keepdim=True)
+            )
 
             if self.srp_mode == "post_agg":
                 beta_bh = self.beta_patch.to(dtype=y.dtype, device=y.device).view(1, H, 1, 1)
+                if dot_yr is None or r_hat_det is None:
+                    raise RuntimeError("post_agg requires an unchunked local context")
                 z_patch = y_patch - beta_bh * dot_yr * r_hat_det
             elif self.srp_mode == "post_agg_gated":
                 # Validation: required-input checks
@@ -964,6 +1137,8 @@ class NystromSRPAttention(nn.Module):
                 gate = h_morph.clamp(0.0, 1.0).to(dtype=y.dtype).unsqueeze(1).unsqueeze(-1)
                 beta_base = self.beta_patch.to(dtype=y.dtype, device=y.device).view(1, H, 1, 1)
                 beta_eff = beta_base * gate                                 # (B, H, N, 1)
+                if dot_yr is None or r_hat_det is None:
+                    raise RuntimeError("post_agg_gated requires an unchunked local context")
                 z_patch = y_patch - beta_eff * dot_yr * r_hat_det
             elif self.srp_mode in _SRP_SIGNED_GATE_MODES:
                 # Signed-gated SRP: per-(token, head) β_eff from a learned
@@ -985,36 +1160,83 @@ class NystromSRPAttention(nn.Module):
                             f"h_local shape mismatch: got "
                             f"{tuple(h_local.shape)}, expected ({B}, {N_real})"
                         )
-                    # Per-token diagnostics (3 channels, matching the
-                    # gate's num_token_features=3 in __init__).
                     cnt_bn = cnt.squeeze(-1).squeeze(1).to(dtype=y.dtype)  # (B, N)
-                    token_diag = _make_token_diag(
-                        h_local=h_local.to(y.dtype),
-                        cnt_bn=cnt_bn,
-                        max_neighbors=neighbor_k,
-                        mode=self.gate_count_features,
-                    )
-                    # Per-head diagnostics: cos(y, r̂), |cos|, log_norm_y.
-                    eps = 1e-12
-                    y_norms = y_patch.norm(dim=-1)                        # (B, H, N)
-                    cos_yr = dot_yr.squeeze(-1) / (y_norms + eps)         # (B, H, N)
-                    head_diag = torch.stack(
-                        [cos_yr, cos_yr.abs(), torch.log1p(y_norms)],
-                        dim=-1,
-                    )                                                     # (B, H, N, 3)
-                    # The default detach convention: by default, gate
-                    # diagnostic inputs are stop-grad'd. self.detach_gate_inputs
-                    # toggles this — see __init__ for rationale; the +0.98
-                    # pp ADP detach finding (by design) is what motivates the
-                    # flag.
-                    if self.detach_gate_inputs:
-                        token_diag = token_diag.detach()
-                        head_diag = head_diag.detach()
-                    beta_eff = self.gate(token_diag, head_diag)           # (B, H, N, 1)
-                    self._last_gate_beta_eff_for_loss = beta_eff
+                    if use_chunked_signed_gate:
+                        # Each chunk uses the full source value stream but
+                        # allocates local directions only for its query rows.
+                        # This is algebraically identical to the unchunked path.
+                        z_full = y.clone()
+                        beta_parts = []
+                        cos_parts = []
+                        norm_parts = []
+                        for start in range(0, N_real, chunk_size):
+                            end = min(start + chunk_size, N_real)
+                            weight_chunk = (
+                                neighbor_weight[:, start:end]
+                                if neighbor_weight is not None
+                                else None
+                            )
+                            _, r_hat_chunk, cnt_chunk = streaming_neighborhood_mean_subset(
+                                v_patch_pre.detach(),
+                                neighbor_index[:, start:end],
+                                neighbor_mask[:, start:end],
+                                weight_chunk,
+                            )
+                            y_chunk = y_patch[:, :, start:end]
+                            dot_chunk = (y_chunk * r_hat_chunk).sum(dim=-1, keepdim=True)
+                            count_chunk = cnt_chunk.squeeze(-1).squeeze(1).to(y.dtype)
+                            token_diag = _make_token_diag(
+                                h_local=h_local[:, start:end].to(y.dtype),
+                                cnt_bn=count_chunk,
+                                max_neighbors=neighbor_k,
+                                mode=self.gate_count_features,
+                            )
+                            y_norms = y_chunk.norm(dim=-1)
+                            cos_yr = dot_chunk.squeeze(-1) / (y_norms + 1e-12)
+                            head_diag = torch.stack(
+                                [cos_yr, cos_yr.abs(), torch.log1p(y_norms)],
+                                dim=-1,
+                            )
+                            if self.detach_gate_inputs:
+                                token_diag = token_diag.detach()
+                                head_diag = head_diag.detach()
+                            beta_chunk = self.gate(token_diag, head_diag)
+                            z_full[:, :, 1 + start : 1 + end] = (
+                                y_chunk - beta_chunk * dot_chunk * r_hat_chunk
+                            )
+                            beta_parts.append(beta_chunk.detach())
+                            cos_parts.append(cos_yr.detach())
+                            norm_parts.append(y_norms.detach())
+                        beta_eff = torch.cat(beta_parts, dim=2)
+                        cos_yr = torch.cat(cos_parts, dim=2)
+                        y_norms = torch.cat(norm_parts, dim=2)
+                        z_patch = z_full[:, :, 1 : 1 + N_real]
+                    else:
+                        if dot_yr is None or r_hat_det is None:
+                            raise RuntimeError("signed Gated SRP is missing local context")
+                        token_diag = _make_token_diag(
+                            h_local=h_local.to(y.dtype),
+                            cnt_bn=cnt_bn,
+                            max_neighbors=neighbor_k,
+                            mode=self.gate_count_features,
+                        )
+                        y_norms = y_patch.norm(dim=-1)
+                        cos_yr = dot_yr.squeeze(-1) / (y_norms + 1e-12)
+                        head_diag = torch.stack(
+                            [cos_yr, cos_yr.abs(), torch.log1p(y_norms)],
+                            dim=-1,
+                        )
+                        if self.detach_gate_inputs:
+                            token_diag = token_diag.detach()
+                            head_diag = head_diag.detach()
+                        beta_eff = self.gate(token_diag, head_diag)
+                        self._last_gate_beta_eff_for_loss = beta_eff
+                        z_patch = y_patch - beta_eff * dot_yr * r_hat_det
                     with torch.no_grad():
                         self._last_gate_stats = {
                             "beta_eff": beta_eff.detach(),
+                            "delta_eff": self.gate.current_delta().detach(),
+                            "delta_mode": self.gate.delta_mode,
                             "cos_yr": cos_yr.detach(),
                             "y_norms": y_norms.detach(),
                             "h_local": h_local.detach(),
@@ -1022,8 +1244,10 @@ class NystromSRPAttention(nn.Module):
                         }
                 else:
                     # Dead-path block: β_eff = 0, equivalent to identity.
+                    if dot_yr is None:
+                        raise RuntimeError("dead signed-gate path requires local context")
                     beta_eff = torch.zeros_like(dot_yr)
-                z_patch = y_patch - beta_eff * dot_yr * r_hat_det
+                    z_patch = y_patch - beta_eff * dot_yr * r_hat_det
             elif self.srp_mode in ("post_agg_rcd", "post_agg_rcd_learned_r"):
                 # Method 2.1 / corrected RCD: decompose y into common and
                 # residual branches, then add zero-initialized non-shared

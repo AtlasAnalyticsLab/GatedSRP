@@ -1,26 +1,15 @@
 name: gatedsrp
 channels:
+  - conda-forge
   - defaults
 dependencies:
   - python=3.10
+  # AtlasPatch and openslide-python require the native OpenSlide library.
+  - openslide
   - pip
-  - pip:
-      - numpy
-      - pandas
-      - scipy
-      - scikit-learn
-      - h5py
-      - pillow
-      - tqdm
-      - wandb
-      - matplotlib
-      - seaborn
-      - statsmodels
-      - timm
-      - einops
-      - openslide-python
-      - pytest
 
-# Recommended after creation:
+# Install PyTorch before requirements so transitive dependencies such as timm
+# cannot select a different build:
 #   conda activate gatedsrp
-#   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+#   python -m pip install -r requirements.txt

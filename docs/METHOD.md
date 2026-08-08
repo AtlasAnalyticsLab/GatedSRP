@@ -1,88 +1,133 @@
-# Method Overview
+# Method
 
-Gated Spatial Redundancy Projection (Gated SRP) is an attention correction for
-computational pathology transformers. It is motivated by a simple WSI-specific
-fact: nearby tissue patches often carry highly similar morphology, stain,
-texture, and cellular content. A standard attention layer can repeatedly mix
-that locally common component into patch tokens, making subtle diagnostic or
-prognostic deviations harder to preserve.
-
-Gated SRP keeps the ordinary attention layer and adds a small geometric update
-around it.
+Gated Spatial Redundancy Projection (GatedSRP) is a post-attention correction
+for spatially organized pathology tokens. It separates the component of each
+patch update that aligns with its local neighborhood and lets a small signed
+gate decide how that component should be treated.
 
 <p align="center">
-  <img src="../assets/gatedsrp_overview.png" width="940" alt="Gated SRP method overview">
-</p>
-<p align="center">
-  <sub>The module is a drop-in correction after self-attention: estimate the local direction, project the attention output onto it, and use a learned signed gate to decide how much of that component to remove or preserve.</sub>
+  <img src="../assets/gatedsrp_overview.png" width="960" alt="GatedSRP method overview">
 </p>
 
 ## Motivation
 
+Adjacent whole-slide image patches often share morphology, stain, texture, and
+cell composition. Their feature vectors are therefore more locally similar
+than patches in a typical natural image. Repeatedly mixing the common component
+can obscure the smaller deviations that carry diagnosis or prognosis.
+
 <p align="center">
-  <img src="../assets/local_redundancy.png" width="940" alt="Local feature similarity in natural images and whole-slide images">
-</p>
-<p align="center">
-  <sub>WSI patch neighborhoods show high local feature similarity, making local redundancy a pathology-specific structure rather than a generic image prior.</sub>
+  <img src="../assets/local_redundancy.png" width="960" alt="Local feature redundancy in natural images and pathology slides">
 </p>
 
-## Core Update
+GatedSRP uses this spatial structure without replacing self-attention. The base
+attention output, positional mechanism, residual path, and task head remain in
+place.
 
-For each attention head and patch token:
+## Local Direction
 
-1. Compute the normal attention output `y_i`.
-2. Build a local reference direction `r_i` by averaging the value vectors of
-   spatial neighbors from the coordinate grid.
-3. Normalize it to `r_hat_i`.
-4. Predict a signed coefficient `beta_i` with a small token/head gate.
-5. Correct only the neighborhood-aligned component:
+For patch token `i` and attention head `h`, let `N(i)` be the available patches
+in an odd square coordinate window. The default `3x3` window has at most eight
+neighbors and excludes the center patch.
 
 ```text
-z_i = y_i - beta_i * <y_i, r_hat_i> * r_hat_i
+r_i,h     = weighted_mean({v_j,h : j in N(i)})
+r_hat_i,h = r_i,h / ||r_i,h||
+c_i,h     = <y_i,h, r_hat_i,h> r_hat_i,h
 ```
 
-`beta_i = 0` preserves the original attention output. Positive values suppress
-the locally common component. Larger positive values can reflect that component.
-Negative values can preserve or amplify local context when the task needs it.
+`v` is the value stream and `y` is the attention update. Missing coordinate
+cells are masked. An isolated patch gets a zero local direction and therefore
+passes through unchanged.
 
-## Design Choices
+## Signed Gate
 
-| Choice | Why it matters |
-|---|---|
-| Local spatial reference | Redundancy is estimated from neighboring patches rather than from a global slide mean. |
-| Signed adaptive gate | The model can decide whether to subtract, preserve, or reflect local common content per token and head. |
-| Identity-safe initialization | The signed gate starts at `beta_i = 0`, so the model begins as the base attention layer. |
-| CLS direct pass-through | The CLS row is not directly projected; it receives SRP effects only through changed patch tokens. |
-| Small parameter overhead | The reported WSI runs add only `+0.004%` to `+0.034%` parameters depending on dataset configuration. |
+The gate combines token-level local diagnostics with head-level alignment and
+magnitude diagnostics:
+
+```text
+g_i,h    = MLP_token(d_i) + Linear_head(e_i,h) + b_layer,head
+beta_i,h = delta * tanh(g_i,h)
+z_i,h    = y_i,h - beta_i,h c_i,h
+```
+
+The output path of the gate is initialized to zero. Consequently `g=0`,
+`beta=0`, and `z=y` at initialization for every token and head.
+
+| Coefficient | Geometric effect |
+|---:|---|
+| `< 0` | Adds the neighborhood-aligned component. |
+| `0` | Identity; leaves the attention update unchanged. |
+| `1` | Removes the neighborhood-aligned component. |
+| `2` | Reflects the neighborhood-aligned component. |
+
+The selected dataset configurations use a fixed bound `delta`. The direct
+bounded alternative removes this selected range:
+
+```text
+beta = 2 * tanh(g / 2)
+```
+
+Both parameterizations are exposed through `--gate_delta_mode`; their results
+are in [coefficient_parameterizations.tsv](../results/coefficient_parameterizations.tsv).
+
+## Where the Update Is Applied
+
+The default slide-level implementation applies GatedSRP after the attention
+aggregation and before the residual update. Only real patch rows are corrected:
+
+- CLS tokens are never directly projected.
+- Padded or duplicated rows are not treated as real patches.
+- The final post-attention patch-only correction is disabled when no later
+  attention block exists for corrected patches to influence CLS.
+- Local directions are detached from the correction path while gradients still
+  flow through the attention update and signed gate.
+
+The code also exposes controlled pre-Q, pre-K, pre-V, fixed-beta, and learned
+local-direction variants used by the component comparisons.
+
+## Scaling to Native-Length Slides
+
+A direct neighbor gather allocates a tensor shaped `(B, H, N, K, D)`. The
+released slide implementation computes the same weighted mean by streaming
+neighbor slots and can apply the correction in token chunks. This preserves the
+operation while reducing peak memory to tensors proportional to `(B, H, N, D)`.
+
+Use:
+
+```text
+--srp_context_impl streaming_mean
+--srp_correction_chunk_size 32768
+```
+
+Set the chunk size to `0` to disable token chunking. Unit tests compare stacked,
+streamed, and chunked outputs numerically.
+
+## Learned Regimes
 
 <p align="center">
-  <img src="../assets/gate_coefficients.png" width="900" alt="Effective signed gate coefficients over training">
-</p>
-<p align="center">
-  <sub>The signed gate does not converge to one universal value: its effective coefficient changes by dataset and layer, which supports keeping the correction adaptive.</sub>
+  <img src="../assets/signed_gate_examples.png" width="900" alt="Examples of signed gate behavior on PANDA and TCGA-KIRC">
 </p>
 
-## Where It Lives
+The coefficient is adaptive rather than a fixed pathology label. Across 410
+final checkpoint exports, most token means are between identity and projection;
+none of the export means exceed `1.5`. Individual examples include weakly
+negative PANDA behavior and KIRC behavior above projection strength. The
+complete dataset-level fractions are stored in
+[coefficient_behavior.tsv](../results/coefficient_behavior.tsv).
 
-| Use case | Implementation |
+## Implementation Map
+
+| Component | File |
 |---|---|
-| Slide-level TransMIL-style Nystrom attention | `slide_level_srp/src/srp_attention.py::NystromSRPAttention` |
-| Full-softmax ViT on fixed patch grids | `src/srp_patch_attention.py::PatchSRPAttention` |
-| Slide-level model wrapper | `slide_level_srp/src/srp_aggregator.py::NystromSRPAggregator` |
-| Shared signed gate | `slide_level_srp/src/gate_signed.py::TokenHeadGate` |
-| Neighbor graph and homogeneity inputs | `slide_level_srp/data_ext.py` |
+| Signed token/head gate | `slide_level_srp/src/gate_signed.py` |
+| Nyström attention correction | `slide_level_srp/src/srp_attention.py` |
+| TransMIL-style aggregator | `slide_level_srp/src/srp_aggregator.py` |
+| Architecture-neutral correction | `slide_level_srp/src/srp_correction.py` |
+| Dense MHSA variant | `slide_level_srp/src/dense_srp_aggregator.py` |
+| SPAN and LongNet adapters | `slide_level_srp/src/official_architectures.py` |
+| Coordinate graph and local homogeneity | `slide_level_srp/data_ext.py` |
+| Fixed-grid ViT correction | `src/srp_patch_attention.py` |
 
-## Reported Evidence
-
-The bundled reference tables show the main trends:
-
-- Gated SRP obtains the best mean case-level C-index on all five TCGA survival
-  cohorts in the reported comparison.
-- It improves the NA baseline on 12 of 16 reported classification metrics.
-- It gives the best mean classification AUC on three of five classification
-  datasets.
-- The architecture-choice ablation confirms the correction also works in dense
-  full-attention settings on ADP patches and PANDA dense ViT.
-
-See [RESULTS.md](RESULTS.md) for the table files and
-[REPRODUCING.md](REPRODUCING.md) for exact commands.
+See [INTEGRATION.md](INTEGRATION.md) for integration contracts and
+[RESULTS.md](RESULTS.md) for quantitative evidence.

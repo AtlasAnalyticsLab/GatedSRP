@@ -142,7 +142,7 @@ def test_C_cls_row_never_projected():
 
         z_cls == y_cls   (inside a single forward pass)
 
-    NOT cross-ablation equality: under pre_v, CLS's output legitimately
+    NOT cross-variant equality: under pre_v, CLS's output legitimately
     differs from baseline because CLS attends over modified patch values
     (by design: CLS inherits SRP's effect indirectly through modified
     patch outputs). Checking z_cls(β=1) == z_cls(β=0)

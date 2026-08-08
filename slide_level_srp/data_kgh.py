@@ -3,10 +3,9 @@
 KGH feature H5s are flat under ``KGH_FEATURE_ROOT`` while class labels
 come from the raw-slide tree under ``KGH_RAW_ROOT/{train,test}/<class>``.
 This adapter joins those inventories by slide stem and then builds
-stratified slide-level folds, matching the CAM16/PANDA/CAM17 ablation
-protocol.
+stratified slide-level folds, matching the CAM16/PANDA/CAM17 task protocol.
 
-The current KGH ablation task is disease subtype classification only:
+The KGH task is disease subtype classification only:
 ``CP_HP``, ``CP_SSL``, ``CP_TA``, and ``CP_TVA``.  ``Normal`` slides may be
 present in the raw tree and embedding folder, but they are intentionally
 excluded so the trainer sees a stable 4-class target.

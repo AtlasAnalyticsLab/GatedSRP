@@ -16,7 +16,7 @@ What we verify:
   test_F   reproducing fixed beta via raw_init: when the layer_head_bias
            is set to arctanh(beta / delta_scale), the gate produces a
            constant beta_eff equal to the requested fixed beta. This
-           verifies the non-zero-initialization ablation recipe.
+           verifies the non-zero-initialization variant recipe.
 
 These tests are pure-PyTorch and do not require GPU. Run with:
 
@@ -203,7 +203,7 @@ def test_F_fixed_beta_via_raw_init() -> None:
     on every head should produce a constant beta_eff equal to
     beta_target across all (b, h, n).
 
-    This verifies the non-zero-initialization ablation recipe.
+    This verifies the non-zero-initialization variant recipe.
     """
     delta_scale = 2.0
     beta_target = 1.0
@@ -239,6 +239,55 @@ def test_G_negative_beta_reachable() -> None:
         beta_eff, torch.full_like(beta_eff, beta_target), atol=1e-6,
     )
     assert (beta_eff < 0).all()
+
+
+def test_G2_direct_beta_softclip_uses_geometry_bound() -> None:
+    """The direct parameterization must implement beta=2*tanh(g/2).
+
+    ``delta_scale`` is deliberately set to an unrelated value so this test
+    catches accidental reuse of the fixed-range parameterization.
+    """
+    gate = TokenHeadGate(
+        num_heads=H,
+        num_token_features=T_TOKEN,
+        num_head_features=T_HEAD,
+        hidden_dim=HIDDEN_DIM,
+        delta_scale=0.25,
+        delta_mode="direct_beta_softclip",
+    )
+    token_diag = torch.randn(B, N, T_TOKEN)
+    head_diag = torch.randn(B, H, N, T_HEAD)
+    raw = 1.25
+    with torch.no_grad():
+        gate.layer_head_bias.fill_(raw)
+
+    expected = 2.0 * math.tanh(raw / 2.0)
+    beta_eff = gate(token_diag, head_diag)
+    assert gate.current_delta().item() == 2.0
+    assert torch.allclose(
+        beta_eff,
+        torch.full_like(beta_eff, expected),
+        atol=1e-6,
+    )
+
+
+def test_G3_direct_beta_constant_initialization_is_exact() -> None:
+    """Constant initialization must invert the direct soft clip exactly."""
+    target = -0.75
+    gate = TokenHeadGate(
+        num_heads=H,
+        num_token_features=T_TOKEN,
+        num_head_features=T_HEAD,
+        hidden_dim=HIDDEN_DIM,
+        delta_scale=0.5,
+        delta_mode="direct_beta_softclip",
+        output_init="constant_beta",
+        init_beta0=target,
+    )
+    token_diag = torch.randn(B, N, T_TOKEN)
+    head_diag = torch.randn(B, H, N, T_HEAD)
+    beta_eff = gate(token_diag, head_diag)
+    assert torch.allclose(beta_eff, torch.full_like(beta_eff, target), atol=1e-6)
 
 
 def test_H_gate_stats_accumulator_correlation_is_pearson() -> None:

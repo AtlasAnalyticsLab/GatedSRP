@@ -1,7 +1,7 @@
 """CAMELYON16 UNI-v2 slide adapter for the SRP TransMIL trainer.
 
 This is intentionally separate from :mod:`data_cam16`, which is the
-historical 768-d ViT-B/16 adapter. The paper runs use 1536-d UNI-v2
+historical 768-d ViT-B/16 adapter. The released runs use 1536-d UNI-v2
 embeddings under ``data/features/camelyon16`` by default, or the path
 provided in ``CAM16_UNIV2_ROOT``.
 """
@@ -94,7 +94,7 @@ def enumerate_cam16_univ2_slides(
         raise RuntimeError(
             f"CAM16 {family} inventory incomplete: "
             f"tumor={class_counts.get('tumor', 0)} normal={class_counts.get('normal', 0)}. "
-            "Do not launch CAM16 ablations until both labeled classes are present."
+            "Do not launch CAM16 variants until both labeled classes are present."
         )
     out.sort(key=lambda r: r.slide_id)
     return out
@@ -210,7 +210,7 @@ class Cam16UniV2SlideDataset(Dataset):
             )
         if self.subsample_cap is not None and feats.shape[0] > self.subsample_cap:
             # Deterministic coordinate-spaced cap keeps train/eval views
-            # identical and avoids injecting augmentation into ablations.
+            # identical and avoids injecting augmentation into variants.
             order = np.lexsort((coords[:, 1], coords[:, 0]))
             keep = np.linspace(0, feats.shape[0] - 1, num=self.subsample_cap, dtype=np.int64)
             keep_idx = order[keep]

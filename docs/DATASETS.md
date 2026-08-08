@@ -107,11 +107,16 @@ them or set `TCGA_STAGE_DUPLICATE_POLICY=first`.
 
 | Manifest | Required datasets |
 |---|---|
-| `paper_classification.tsv` | CAMELYON16, CAMELYON17, KGH, PANDA, BRACS |
-| `paper_tcga_survival.tsv` | TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, TCGA-UCEC |
-| `paper_architecture_ablation.tsv` | ADP Release1 and PANDA |
-| `paper_design_ablation.tsv` | KIRP, LUAD, STAD, KGH, PANDA, BRACS, plus selected CAMELYON settings encoded in the manifest |
-| `paper_patch_encoder_ablation.tsv` | KGH, PANDA, BRACS, TCGA-KIRP, TCGA-LUAD, TCGA-STAD with the requested encoder features |
+| `classification_tasks.tsv` | CAMELYON16, CAMELYON17, KGH, PANDA, BRACS |
+| `survival_tasks.tsv` | TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, TCGA-UCEC |
+| `attention_operators.tsv` | ADP Release1 and PANDA |
+| `component_variants.tsv` | KIRP, LUAD, STAD, KGH, PANDA, BRACS, plus selected CAMELYON settings encoded in the manifest |
+| `patch_encoders.tsv` | KGH, PANDA, BRACS, TCGA-KIRP, TCGA-LUAD, TCGA-STAD with the requested encoder features |
+| `slide_backbones.tsv` | TCGA-KIRP/LUAD/STAD, PANDA, BRACS |
+| `mil_models.tsv` | TCGA-KIRP/LUAD/STAD/UCEC |
+| `neighborhood_sizes.tsv` | TCGA-KIRP/LUAD/STAD, KGH, PANDA, BRACS |
+| `coefficient_parameterizations.tsv` | TCGA-KIRP/LUAD/STAD, KGH, PANDA, BRACS |
+| `runtime_efficiency.tsv` | TCGA-KIRC/KIRP/LUAD/STAD/UCEC and PANDA |
 
 ## Inclusion Rules
 
@@ -123,8 +128,8 @@ The code mirrors the reported filtering:
 - PANDA: one zero-patch slide is excluded by H5 validation before split construction.
 - BRACS: WSI-level seven-class labels; slides without H5 features are skipped.
 - TCGA: OS endpoint, non-positive survival times removed, case-level splitting and case-level C-index.
-- ADP: used only for the architecture-choice ablation; it is a raw-RGB
-  patch-level multilabel task, not a slide-level WSI benchmark.
+- ADP: used for the attention-operator comparison; it is a raw-RGB patch-level
+  multilabel task, not a slide-level WSI benchmark.
 
 ## ADP Layout
 

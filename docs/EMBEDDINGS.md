@@ -1,9 +1,9 @@
 # Embeddings
 
-The main WSI runs use frozen 20x, 256-pixel AtlasPatch UNI-v2 patch
-embeddings. The patch-encoder ablation also uses MedSigLIP-448 and ViT-B/16
-features in the same one-H5-file-per-WSI format. ADP is the exception: it
-loads raw RGB patch PNGs directly.
+The WSI task and comparison runs use frozen 20x, 256-pixel AtlasPatch UNI-v2
+patch embeddings. The patch-encoder comparison also uses MedSigLIP-448 and
+ViT-B/16 features in the same one-H5-file-per-WSI format. ADP is the
+exception: it loads raw RGB patch PNGs directly.
 
 ## H5 Contract
 
@@ -27,7 +27,15 @@ python scripts/validate_h5_embeddings.py \
 
 ## Extraction Template
 
-Install AtlasPatch in the same environment used for feature extraction:
+Install the native OpenSlide library, then AtlasPatch in the environment used
+for feature extraction. Conda users already receive OpenSlide through
+`environment.yml`; on Ubuntu or Debian use:
+
+```bash
+sudo apt-get install openslide-tools
+```
+
+Install the Python package and SAM2:
 
 ```bash
 python -m pip install atlas-patch
@@ -41,6 +49,10 @@ For `uv`:
 uv pip install atlas-patch
 uv pip install git+https://github.com/facebookresearch/sam2.git
 ```
+
+UNI-v2 is gated on Hugging Face. Request access to `MahmoodLab/UNI2-h` and set
+`HF_TOKEN` before extraction. AtlasPatch skips an existing per-slide H5 by
+default; pass `--force` to the launcher only when you intend to rebuild it.
 
 Then run the dataset-aware launcher. It calls `atlaspatch process` with
 `--patch-size 256 --target-mag 20 --feature-extractors uni_v2` and writes the
@@ -137,7 +149,7 @@ directly.
 
 If your extraction tool writes a different key, either normalize to `/features/uni_v2` or set the matching `*_FEATURE_KEY` variable and keep `--in_dim 1536`.
 
-## Patch-Encoder Ablation Keys
+## Patch-Encoder Features
 
 The patch-encoder manifest expects the following feature dimensions and H5
 keys:

@@ -1,15 +1,14 @@
-"""Patch-level ADP training for the architecture-choice ablation.
+"""Patch-level ADP training for the attention-operator comparison.
 
-ADP is a multi-label raw-RGB patch task. The reported architecture ablation
-uses a ViT-S/16 model over 272 x 272 patches, producing a 17 x 17 patch-token
-grid plus a CLS token. The baseline arm uses standard MHSA; the Gated SRP arm
-uses the same model dimensions and swaps in the patch-level signed SRP backend.
+ADP is a multi-label raw-RGB patch task. The comparison uses a ViT-S/16 model
+over 272 x 272 patches, producing a 17 x 17 patch-token grid plus a CLS token.
+The baseline arm uses standard MHSA; the Gated SRP arm uses the same model
+dimensions and swaps in the patch-level signed SRP backend.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -418,7 +417,7 @@ def parse_args():
         if args.mask_diagonal:
             raise SystemExit(
                 "[parse_args] --diff_transformer cannot be combined with "
-                "--mask_diagonal; diagonal masking is an XSA/SA ablation."
+                "--mask_diagonal; diagonal masking is an XSA/SA variant."
             )
     if args.srp_gate_placement in {"pre_q", "pre_k"} and (
         not args.use_srp or args.beta_patch_mode != "signed_gated"
@@ -465,12 +464,6 @@ def parse_args():
     return args
 
 
-def _sha256_indices(idx: np.ndarray) -> str:
-    """Stable hash for split-audit metadata and cross-arm comparison."""
-    arr = np.asarray(idx, dtype=np.int64)
-    return hashlib.sha256(arr.tobytes()).hexdigest()
-
-
 def _build_split_metadata(args, train_loader, val_loader, test_loader) -> dict:
     """
     Persist enough split information to verify cross-arm split invariants.
@@ -491,7 +484,6 @@ def _build_split_metadata(args, train_loader, val_loader, test_loader) -> dict:
         "neighbor_shuffle_seed": args.neighbor_shuffle_seed,
         "unit": "adp_csv_patch_row",
         "counts": {k: int(v.size) for k, v in split_arrays.items()},
-        "hashes": {k: _sha256_indices(v) for k, v in split_arrays.items()},
         "indices": {k: v.tolist() for k, v in split_arrays.items()},
     }
 
@@ -625,7 +617,7 @@ def main() -> None:
     #   method_decay    : gate weights, normal weight_decay
     #   method_nodecay  : gate biases, weight_decay=0
     #
-    # Groups (legacy α/β ablations):
+    # Groups (legacy α/β variants):
     #   backbone_decay  : everything not α/β, normal weight_decay
     #   method_nodecay  : α/β scalars, weight_decay=0
     #   (method_decay is empty in legacy modes)

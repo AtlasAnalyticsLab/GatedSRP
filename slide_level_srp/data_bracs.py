@@ -1,7 +1,7 @@
 """BRACS UNI-v2 WSI adapter for the SRP TransMIL trainer.
 
 BRACS labels are stored in ``data/labels/bracs/BRACS.xlsx`` by default, or
-the path supplied through ``BRACS_XLSX``. The ablation task is WSI-level
+the path supplied through ``BRACS_XLSX``. The task is WSI-level
 classification, so this adapter reads ``WSI_Information`` and uses the
 ``WSI label`` column, not the ROI label columns. UNI-v2 features are flat
 H5 files under ``BRACS_FEATURE_ROOT``.
@@ -27,7 +27,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from slide_level_srp.data_ext import build_neighbor_graph, compute_h_morph
+from slide_level_srp.data_ext import (
+    apply_subsample_mode,
+    build_neighbor_graph,
+    compute_h_morph,
+)
 
 
 BRACS_XLSX = os.environ.get("BRACS_XLSX", "data/labels/bracs/BRACS.xlsx")
@@ -541,6 +545,8 @@ class BRACSSlideDataset(Dataset):
         neighbor_shuffle_seed: int = 0,
         neighbor_weighting: str = "uniform",
         neighbor_weight_sigma: float = 1.0,
+        subsample_mode: str = "coord_uniform",
+        subsample_seed: int = 0,
     ) -> None:
         self.records = list(records)
         self.subsample_cap = subsample_cap
@@ -552,6 +558,8 @@ class BRACSSlideDataset(Dataset):
         self.neighbor_shuffle_seed = int(neighbor_shuffle_seed)
         self.neighbor_weighting = neighbor_weighting
         self.neighbor_weight_sigma = float(neighbor_weight_sigma)
+        self.subsample_mode = subsample_mode
+        self.subsample_seed = int(subsample_seed)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -582,14 +590,14 @@ class BRACSSlideDataset(Dataset):
             raise ValueError(f"{record.h5_path}: empty BRACS feature bag")
 
         if self.subsample_cap is not None and feats.shape[0] > self.subsample_cap:
-            # The safety cap is deterministic and coordinate-spaced.  This
-            # protects GPU memory without introducing run-specific stochastic
-            # patch sampling into the sweep.
-            order = np.lexsort((coords[:, 1], coords[:, 0]))
-            keep = np.linspace(0, feats.shape[0] - 1, num=self.subsample_cap, dtype=np.int64)
-            keep_idx = order[keep]
-            feats = feats[keep_idx]
-            coords = coords[keep_idx]
+            feats, coords = apply_subsample_mode(
+                feats,
+                coords,
+                cap=self.subsample_cap,
+                mode=self.subsample_mode,
+                seed=self.subsample_seed,
+                slide_key=f"BRACS|{record.slide_id}|{record.patient_id}",
+            )
 
         coords_2d = coords[:, :2].astype(np.int64)
         nbi, nbm, nbw = build_neighbor_graph(
@@ -659,6 +667,8 @@ def build_bracs_loaders_for_fold(
     neighbor_shuffle_seed: int = 0,
     neighbor_weighting: str = "uniform",
     neighbor_weight_sigma: float = 1.0,
+    subsample_mode: str = "coord_uniform",
+    subsample_seed: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     eff_train_cap = train_cap if train_cap is not None else subsample_cap
     eff_val_cap = val_cap if val_cap is not None else subsample_cap
@@ -672,6 +682,8 @@ def build_bracs_loaders_for_fold(
         neighbor_shuffle_seed=neighbor_shuffle_seed,
         neighbor_weighting=neighbor_weighting,
         neighbor_weight_sigma=neighbor_weight_sigma,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
     train_ds = BRACSSlideDataset(_filter_records(records, fold.train_patients), eff_train_cap, **ds_kwargs)
     val_ds = BRACSSlideDataset(_filter_records(records, fold.val_patients), eff_val_cap, **ds_kwargs)

@@ -333,7 +333,7 @@ class ViT(nn.Module):
         # must match (see below where we pass it through).
         self.num_cls_tokens = 1
         # Diagonal masking (a_{i,i}=0) is orthogonal to XSA's alpha modes.
-        # The mask_all control ablation uses mask_diagonal=True with alpha=0,
+        # The mask_all control variant uses mask_diagonal=True with alpha=0,
         # so that no XSA projection is applied, only the direct-self-attention
         # block. Set uniformly across all blocks.
         self.mask_diagonal = mask_diagonal

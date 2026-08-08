@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Run reported command manifests row-by-row.
+"""Run public command manifests row-by-row.
 
-The manifests in ``configs/`` keep every reported run as an explicit shell
+The manifests in ``configs/`` keep every evaluation run as an explicit shell
 command.  This wrapper adds light filtering and fail-fast execution while
 leaving the actual trainer arguments visible and editable in the TSV.
 """

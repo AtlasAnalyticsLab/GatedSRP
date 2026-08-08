@@ -1,0 +1,81 @@
+cohort	method	seed	metric	value
+KIRP	ABMIL	42	case_c_index	0.794224
+KIRP	ABMIL	43	case_c_index	0.614786
+KIRP	ABMIL	44	case_c_index	0.819923
+KIRP	ABMIL	45	case_c_index	0.587591
+KIRP	ABMIL	46	case_c_index	0.795276
+KIRP	DSMIL	42	case_c_index	0.790614
+KIRP	DSMIL	43	case_c_index	0.638132
+KIRP	DSMIL	44	case_c_index	0.819923
+KIRP	DSMIL	45	case_c_index	0.551095
+KIRP	DSMIL	46	case_c_index	0.826772
+KIRP	Official TransMIL	42	case_c_index	0.787004
+KIRP	Official TransMIL	43	case_c_index	0.626459
+KIRP	Official TransMIL	44	case_c_index	0.800766
+KIRP	Official TransMIL	45	case_c_index	0.704380
+KIRP	Official TransMIL	46	case_c_index	0.740157
+KIRP	Gated SRP	42	case_c_index	0.833935
+KIRP	Gated SRP	43	case_c_index	0.665370
+KIRP	Gated SRP	44	case_c_index	0.823755
+KIRP	Gated SRP	45	case_c_index	0.689781
+KIRP	Gated SRP	46	case_c_index	0.811024
+LUAD	ABMIL	42	case_c_index	0.576525
+LUAD	ABMIL	43	case_c_index	0.546374
+LUAD	ABMIL	44	case_c_index	0.568169
+LUAD	ABMIL	45	case_c_index	0.607164
+LUAD	ABMIL	46	case_c_index	0.478409
+LUAD	DSMIL	42	case_c_index	0.555811
+LUAD	DSMIL	43	case_c_index	0.557617
+LUAD	DSMIL	44	case_c_index	0.589846
+LUAD	DSMIL	45	case_c_index	0.602985
+LUAD	DSMIL	46	case_c_index	0.583523
+LUAD	Official TransMIL	42	case_c_index	0.464902
+LUAD	Official TransMIL	43	case_c_index	0.584598
+LUAD	Official TransMIL	44	case_c_index	0.592128
+LUAD	Official TransMIL	45	case_c_index	0.521791
+LUAD	Official TransMIL	46	case_c_index	0.547727
+LUAD	Gated SRP	42	case_c_index	0.596663
+LUAD	Gated SRP	43	case_c_index	0.591906
+LUAD	Gated SRP	44	case_c_index	0.539646
+LUAD	Gated SRP	45	case_c_index	0.654328
+LUAD	Gated SRP	46	case_c_index	0.533523
+STAD	ABMIL	42	case_c_index	0.641745
+STAD	ABMIL	43	case_c_index	0.649749
+STAD	ABMIL	44	case_c_index	0.620774
+STAD	ABMIL	45	case_c_index	0.514465
+STAD	ABMIL	46	case_c_index	0.525543
+STAD	DSMIL	42	case_c_index	0.662305
+STAD	DSMIL	43	case_c_index	0.619674
+STAD	DSMIL	44	case_c_index	0.566687
+STAD	DSMIL	45	case_c_index	0.525786
+STAD	DSMIL	46	case_c_index	0.542146
+STAD	Official TransMIL	42	case_c_index	0.690343
+STAD	Official TransMIL	43	case_c_index	0.610276
+STAD	Official TransMIL	44	case_c_index	0.545790
+STAD	Official TransMIL	45	case_c_index	0.580503
+STAD	Official TransMIL	46	case_c_index	0.501277
+STAD	Gated SRP	42	case_c_index	0.696573
+STAD	Gated SRP	43	case_c_index	0.609023
+STAD	Gated SRP	44	case_c_index	0.633682
+STAD	Gated SRP	45	case_c_index	0.597484
+STAD	Gated SRP	46	case_c_index	0.548531
+UCEC	ABMIL	42	case_c_index	0.614754
+UCEC	ABMIL	43	case_c_index	0.594595
+UCEC	ABMIL	44	case_c_index	0.660232
+UCEC	ABMIL	45	case_c_index	0.710983
+UCEC	ABMIL	46	case_c_index	0.683761
+UCEC	DSMIL	42	case_c_index	0.627049
+UCEC	DSMIL	43	case_c_index	0.671171
+UCEC	DSMIL	44	case_c_index	0.660232
+UCEC	DSMIL	45	case_c_index	0.710983
+UCEC	DSMIL	46	case_c_index	0.641026
+UCEC	Official TransMIL	42	case_c_index	0.590164
+UCEC	Official TransMIL	43	case_c_index	0.729730
+UCEC	Official TransMIL	44	case_c_index	0.613900
+UCEC	Official TransMIL	45	case_c_index	0.710983
+UCEC	Official TransMIL	46	case_c_index	0.585470
+UCEC	Gated SRP	42	case_c_index	0.668033
+UCEC	Gated SRP	43	case_c_index	0.599099
+UCEC	Gated SRP	44	case_c_index	0.648649
+UCEC	Gated SRP	45	case_c_index	0.780347
+UCEC	Gated SRP	46	case_c_index	0.790598

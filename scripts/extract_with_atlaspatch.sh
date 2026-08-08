@@ -6,7 +6,7 @@
 # docs/EMBEDDINGS.md. AtlasPatch writes one H5 per slide under
 # "$OUTPUT_DIR/patches" with /coords and /features/uni_v2.
 #
-# For the released dataset layouts, prefer:
+# For the supported dataset layouts, prefer:
 #   python scripts/extract_atlaspatch_embeddings.py --dataset <name> ...
 set -euo pipefail
 

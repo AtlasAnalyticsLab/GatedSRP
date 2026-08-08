@@ -31,7 +31,7 @@ Nyström details (Xiong et al. 2021, faithful):
       y  = F @ A_inv @ B @ V           # (B, H, N, D_head)
 
     Landmarks are segment-mean pooled (not selected tokens), which is
-    the paper's canonical choice and what TransMIL follows. If N is not
+    the canonical Nyströmformer choice and what TransMIL follows. If N is not
     divisible by m, we pad at the END (so CLS at index 0 stays put) and
     mask the pad columns of B before its softmax so they contribute 0.
 
@@ -102,7 +102,7 @@ def moore_penrose_iter_inv(A: torch.Tensor, iters: int = 6) -> torch.Tensor:
     Earlier versions of this file used per-(batch, head) row/col maxima.
     The audit flagged that as a real numerical discrepancy vs. the
     official TransMIL dependency path; switching to the global-scalar
-    form eliminates it. 6 iterations is the paper's + lucidrains' default.
+    form eliminates it. Six iterations matches the reference implementation.
 
     Input:  A of shape (..., m, m). Must be a softmax output (row-sums = 1).
     Output: A^+ (approximate Moore-Penrose inverse), same shape.

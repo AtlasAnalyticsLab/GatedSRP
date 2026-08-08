@@ -8,7 +8,7 @@ Implementation note:
     The original Diff Transformer computes two full softmax attention maps and
     subtracts them.  Full N x N attention is not safe for WSI bags with tens of
     thousands of patch tokens, so this comparator applies the same differential
-    operation to two Nyström attention approximations.  This keeps the paper's
+    operation to two Nyström attention approximations. This preserves the
     Q1/K1 versus Q2/K2 denoising mechanism, lambda parameterization, per-head
     RMSNorm, and half-head compute convention while matching the memory budget
     of the rest of this project.
@@ -56,7 +56,7 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Normalize only over the per-head channel dimension.  This mirrors the
-        # paper's GroupNorm/RMSNorm intent: heads keep independent statistics
+        # Diff Transformer's GroupNorm/RMSNorm intent: heads keep independent statistics
         # after the differential subtraction, which can otherwise yield much
         # more diverse head scales than ordinary attention.
         inv_rms = torch.rsqrt(x.float().pow(2).mean(dim=-1, keepdim=True) + self.eps)

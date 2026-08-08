@@ -148,7 +148,7 @@ class PandaAttention(nn.Module):
         # are NOT detached before the gate forward — gradients flow
         # back through the y-derived diagnostics into y. This is the
         # "live" regime; default True is the detached regime used by the
-        # released configuration. The ADP architecture ablation motivates
+        # released configuration. The ADP architecture variant motivates
         # keeping this toggle explicit.
         detach_gate_inputs: bool = True,
         gate_output_init: str = "zero",

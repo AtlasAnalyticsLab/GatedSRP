@@ -1,7 +1,7 @@
 [project]
 name = "gatedsrp"
 version = "0.1.0"
-description = "Reproducibility code for Gated Spatial Redundancy Projection."
+description = "Adaptive spatial-redundancy control for whole-slide transformers."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
@@ -9,22 +9,27 @@ classifiers = [
     "License :: Free for non-commercial use",
 ]
 dependencies = [
-    "numpy",
-    "pandas",
-    "scipy",
-    "scikit-learn",
-    "h5py",
-    "pillow",
-    "tqdm",
-    "wandb",
-    "matplotlib",
-    "seaborn",
-    "statsmodels",
-    "timm",
-    "einops",
-    "openslide-python",
-    "pytest",
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "scipy==1.15.3",
+    "scikit-learn==1.7.2",
+    "h5py==3.16.0",
+    "pillow==12.1.1",
+    "tqdm==4.67.3",
+    "wandb==0.26.1",
+    "matplotlib==3.10.9",
+    "seaborn==0.13.2",
+    "statsmodels==0.14.6",
+    "timm==1.0.26",
+    "einops==0.8.2",
+    "openslide-python==1.4.3",
+    "pytest==9.0.3",
 ]
+
+[project.urls]
+Homepage = "https://atlasanalyticslab.github.io/GatedSRP/"
+Repository = "https://github.com/AtlasAnalyticsLab/GatedSRP"
+Documentation = "https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/docs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

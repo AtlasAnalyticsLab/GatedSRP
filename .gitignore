@@ -30,9 +30,10 @@ wandb/
 *.h5
 *.hdf5
 
-# Local notes.
-.release_audit/
 .env.local
+
+# Optional architecture checkouts are installed locally.
+external/
 
 # Add public citation metadata after publication.
 CITATION.cff

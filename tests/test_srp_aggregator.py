@@ -84,7 +84,7 @@ def test_A_forward_shape_all_modes():
 
 
 def test_B_baseline_equivalence_with_stage2():
-    """Under beta=0 and a synthetic baseline ablation, SRPAggregator
+    """Under beta=0 and a synthetic baseline variant, SRPAggregator
     must produce bit-for-bit the same logits as stage-2 XSAggregator
     with alpha_*=0. This is the paired-per-slide guarantee used by the
     released reproduction protocol.
@@ -170,9 +170,9 @@ def test_E_forward_backward_under_pre_v():
 
 
 def test_F_layerscale_disabled_has_no_gamma_parameters():
-    """Default-off LayerScale must preserve old checkpoints and queues.
+    """Default-off LayerScale must preserve existing checkpoints and commands.
 
-    Existing ablation workers do not pass --layerscale_init. In that path the
+    Existing variant workers do not pass --layerscale_init. In that path the
     model should not register any gamma parameters, otherwise old optimizer
     counts and state-dict compatibility would change.
     """
@@ -278,7 +278,7 @@ def test_I_signed_gate_identity_still_holds_with_layerscale():
 def test_I2_pre_attention_signed_gate_identity_matches_baseline():
     """All signed-gated placements must start from the same baseline model.
 
-    This protects the live live ablation ablations too: adding new modes must not
+    This protects the live live variant variants too: adding new modes must not
     perturb the non-gate initialization or the existing zero-beta behavior.
     """
     features, nbi, nbm, h_local = _synthetic_slide(in_dim=32)
@@ -495,7 +495,7 @@ def test_J_layerscale_checkpoint_modes_backward():
 
 
 def test_K_default_shared_ln_preserves_historical_parameter_names():
-    """Default-off split LN must not disturb active queues or old checkpoints."""
+    """Default-off split LN must not disturb existing runs or checkpoints."""
     mod = NystromSRPAggregator(
         in_dim=32, embed_dim=96, depth=2, num_heads=6,
         num_landmarks=8, num_classes=4, beta_patch_mode="zero",

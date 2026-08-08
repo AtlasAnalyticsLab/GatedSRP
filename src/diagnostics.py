@@ -3,8 +3,8 @@ Per-layer CLS and attention-mechanism diagnostics for patch-level ViT runs.
 
 This module provides:
 
-  1. cos(y_i, v_i) diagnostics -- the paper's central "attention similarity
-     bias". Captured per token, split by role (CLS vs patch), averaged per
+  1. cos(y_i, v_i) diagnostics -- the central attention-similarity bias.
+     Captured per token, split by role (CLS vs patch), averaged per
      example (see comment 2 fix below), per head per layer:
        - cos_yv_cls_pre, cos_yv_cls_post      shape (depth, num_heads)
        - cos_yv_patch_pre, cos_yv_patch_post  shape (depth, num_heads)

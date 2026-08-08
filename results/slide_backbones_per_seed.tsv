@@ -1,0 +1,151 @@
+dataset	architecture	variant	seed	primary_metric	value
+KIRP	SPAN	baseline	42	case_c_index	0.799639
+KIRP	SPAN	baseline	43	case_c_index	0.540856
+KIRP	SPAN	baseline	44	case_c_index	0.818008
+KIRP	SPAN	baseline	45	case_c_index	0.653285
+KIRP	SPAN	baseline	46	case_c_index	0.704724
+KIRP	SPAN	gated_srp	42	case_c_index	0.796029
+KIRP	SPAN	gated_srp	43	case_c_index	0.653696
+KIRP	SPAN	gated_srp	44	case_c_index	0.848659
+KIRP	SPAN	gated_srp	45	case_c_index	0.684307
+KIRP	SPAN	gated_srp	46	case_c_index	0.744094
+KIRP	Prov-GigaPath LongNet	baseline	42	case_c_index	0.696751
+KIRP	Prov-GigaPath LongNet	baseline	43	case_c_index	0.653696
+KIRP	Prov-GigaPath LongNet	baseline	44	case_c_index	0.777778
+KIRP	Prov-GigaPath LongNet	baseline	45	case_c_index	0.645985
+KIRP	Prov-GigaPath LongNet	baseline	46	case_c_index	0.712598
+KIRP	Prov-GigaPath LongNet	gated_srp	42	case_c_index	0.815884
+KIRP	Prov-GigaPath LongNet	gated_srp	43	case_c_index	0.496109
+KIRP	Prov-GigaPath LongNet	gated_srp	44	case_c_index	0.685824
+KIRP	Prov-GigaPath LongNet	gated_srp	45	case_c_index	0.660584
+KIRP	Prov-GigaPath LongNet	gated_srp	46	case_c_index	0.647638
+KIRP	Dense MHSA	baseline	42	case_c_index	0.830325
+KIRP	Dense MHSA	baseline	43	case_c_index	0.494163
+KIRP	Dense MHSA	baseline	44	case_c_index	0.827586
+KIRP	Dense MHSA	baseline	45	case_c_index	0.635036
+KIRP	Dense MHSA	baseline	46	case_c_index	0.814961
+KIRP	Dense MHSA	gated_srp	42	case_c_index	0.841155
+KIRP	Dense MHSA	gated_srp	43	case_c_index	0.494163
+KIRP	Dense MHSA	gated_srp	44	case_c_index	0.785441
+KIRP	Dense MHSA	gated_srp	45	case_c_index	0.667883
+KIRP	Dense MHSA	gated_srp	46	case_c_index	0.811024
+LUAD	SPAN	baseline	42	case_c_index	0.525029
+LUAD	SPAN	baseline	43	case_c_index	0.609331
+LUAD	SPAN	baseline	44	case_c_index	0.557330
+LUAD	SPAN	baseline	45	case_c_index	0.596418
+LUAD	SPAN	baseline	46	case_c_index	0.563068
+LUAD	SPAN	gated_srp	42	case_c_index	0.571346
+LUAD	SPAN	gated_srp	43	case_c_index	0.642496
+LUAD	SPAN	gated_srp	44	case_c_index	0.484313
+LUAD	SPAN	gated_srp	45	case_c_index	0.487463
+LUAD	SPAN	gated_srp	46	case_c_index	0.572443
+LUAD	Prov-GigaPath LongNet	baseline	42	case_c_index	0.565305
+LUAD	Prov-GigaPath LongNet	baseline	43	case_c_index	0.424396
+LUAD	Prov-GigaPath LongNet	baseline	44	case_c_index	0.577011
+LUAD	Prov-GigaPath LongNet	baseline	45	case_c_index	0.627164
+LUAD	Prov-GigaPath LongNet	baseline	46	case_c_index	0.646023
+LUAD	Prov-GigaPath LongNet	gated_srp	42	case_c_index	0.466916
+LUAD	Prov-GigaPath LongNet	gated_srp	43	case_c_index	0.591343
+LUAD	Prov-GigaPath LongNet	gated_srp	44	case_c_index	0.556760
+LUAD	Prov-GigaPath LongNet	gated_srp	45	case_c_index	0.536119
+LUAD	Prov-GigaPath LongNet	gated_srp	46	case_c_index	0.607386
+LUAD	Dense MHSA	baseline	42	case_c_index	0.504028
+LUAD	Dense MHSA	baseline	43	case_c_index	0.568859
+LUAD	Dense MHSA	baseline	44	case_c_index	0.586994
+LUAD	Dense MHSA	baseline	45	case_c_index	0.564179
+LUAD	Dense MHSA	baseline	46	case_c_index	0.544318
+LUAD	Dense MHSA	gated_srp	42	case_c_index	0.509781
+LUAD	Dense MHSA	gated_srp	43	case_c_index	0.583474
+LUAD	Dense MHSA	gated_srp	44	case_c_index	0.505419
+LUAD	Dense MHSA	gated_srp	45	case_c_index	0.635224
+LUAD	Dense MHSA	gated_srp	46	case_c_index	0.550568
+STAD	SPAN	baseline	42	case_c_index	0.623676
+STAD	SPAN	baseline	43	case_c_index	0.555764
+STAD	SPAN	baseline	44	case_c_index	0.569760
+STAD	SPAN	baseline	45	case_c_index	0.476101
+STAD	SPAN	baseline	46	case_c_index	0.578863
+STAD	SPAN	gated_srp	42	case_c_index	0.609969
+STAD	SPAN	gated_srp	43	case_c_index	0.622807
+STAD	SPAN	gated_srp	44	case_c_index	0.589428
+STAD	SPAN	gated_srp	45	case_c_index	0.531447
+STAD	SPAN	gated_srp	46	case_c_index	0.511494
+STAD	Prov-GigaPath LongNet	baseline	42	case_c_index	0.668536
+STAD	Prov-GigaPath LongNet	baseline	43	case_c_index	0.549499
+STAD	Prov-GigaPath LongNet	baseline	44	case_c_index	0.564229
+STAD	Prov-GigaPath LongNet	baseline	45	case_c_index	0.537107
+STAD	Prov-GigaPath LongNet	baseline	46	case_c_index	0.454662
+STAD	Prov-GigaPath LongNet	gated_srp	42	case_c_index	0.670405
+STAD	Prov-GigaPath LongNet	gated_srp	43	case_c_index	0.565163
+STAD	Prov-GigaPath LongNet	gated_srp	44	case_c_index	0.576214
+STAD	Prov-GigaPath LongNet	gated_srp	45	case_c_index	0.508176
+STAD	Prov-GigaPath LongNet	gated_srp	46	case_c_index	0.487229
+STAD	Dense MHSA	baseline	42	case_c_index	0.688474
+STAD	Dense MHSA	baseline	43	case_c_index	0.496241
+STAD	Dense MHSA	baseline	44	case_c_index	0.497234
+STAD	Dense MHSA	baseline	45	case_c_index	0.491195
+STAD	Dense MHSA	baseline	46	case_c_index	0.537676
+STAD	Dense MHSA	gated_srp	42	case_c_index	0.646106
+STAD	Dense MHSA	gated_srp	43	case_c_index	0.590852
+STAD	Dense MHSA	gated_srp	44	case_c_index	0.520590
+STAD	Dense MHSA	gated_srp	45	case_c_index	0.559119
+STAD	Dense MHSA	gated_srp	46	case_c_index	0.479566
+PANDA	SPAN	baseline	42	kappa_quad	0.866609
+PANDA	SPAN	baseline	43	kappa_quad	0.864071
+PANDA	SPAN	baseline	44	kappa_quad	0.872821
+PANDA	SPAN	baseline	45	kappa_quad	0.886042
+PANDA	SPAN	baseline	46	kappa_quad	0.871637
+PANDA	SPAN	gated_srp	42	kappa_quad	0.869578
+PANDA	SPAN	gated_srp	43	kappa_quad	0.875088
+PANDA	SPAN	gated_srp	44	kappa_quad	0.873395
+PANDA	SPAN	gated_srp	45	kappa_quad	0.864806
+PANDA	SPAN	gated_srp	46	kappa_quad	0.876152
+PANDA	Prov-GigaPath LongNet	baseline	42	kappa_quad	0.868837
+PANDA	Prov-GigaPath LongNet	baseline	43	kappa_quad	0.880977
+PANDA	Prov-GigaPath LongNet	baseline	44	kappa_quad	0.885444
+PANDA	Prov-GigaPath LongNet	baseline	45	kappa_quad	0.891996
+PANDA	Prov-GigaPath LongNet	baseline	46	kappa_quad	0.872986
+PANDA	Prov-GigaPath LongNet	gated_srp	42	kappa_quad	0.867516
+PANDA	Prov-GigaPath LongNet	gated_srp	43	kappa_quad	0.875535
+PANDA	Prov-GigaPath LongNet	gated_srp	44	kappa_quad	0.880062
+PANDA	Prov-GigaPath LongNet	gated_srp	45	kappa_quad	0.901451
+PANDA	Prov-GigaPath LongNet	gated_srp	46	kappa_quad	0.859118
+PANDA	Dense MHSA	baseline	42	kappa_quad	0.863414
+PANDA	Dense MHSA	baseline	43	kappa_quad	0.884577
+PANDA	Dense MHSA	baseline	44	kappa_quad	0.872582
+PANDA	Dense MHSA	baseline	45	kappa_quad	0.890920
+PANDA	Dense MHSA	baseline	46	kappa_quad	0.871842
+PANDA	Dense MHSA	gated_srp	42	kappa_quad	0.877432
+PANDA	Dense MHSA	gated_srp	43	kappa_quad	0.871228
+PANDA	Dense MHSA	gated_srp	44	kappa_quad	0.877156
+PANDA	Dense MHSA	gated_srp	45	kappa_quad	0.878619
+PANDA	Dense MHSA	gated_srp	46	kappa_quad	0.876401
+BRACS	SPAN	baseline	42	f1	0.414917
+BRACS	SPAN	baseline	43	f1	0.370228
+BRACS	SPAN	baseline	44	f1	0.407955
+BRACS	SPAN	baseline	45	f1	0.522166
+BRACS	SPAN	baseline	46	f1	0.445058
+BRACS	SPAN	gated_srp	42	f1	0.287370
+BRACS	SPAN	gated_srp	43	f1	0.412954
+BRACS	SPAN	gated_srp	44	f1	0.431128
+BRACS	SPAN	gated_srp	45	f1	0.520128
+BRACS	SPAN	gated_srp	46	f1	0.323168
+BRACS	Prov-GigaPath LongNet	baseline	42	f1	0.415654
+BRACS	Prov-GigaPath LongNet	baseline	43	f1	0.336470
+BRACS	Prov-GigaPath LongNet	baseline	44	f1	0.452677
+BRACS	Prov-GigaPath LongNet	baseline	45	f1	0.410481
+BRACS	Prov-GigaPath LongNet	baseline	46	f1	0.401015
+BRACS	Prov-GigaPath LongNet	gated_srp	42	f1	0.395719
+BRACS	Prov-GigaPath LongNet	gated_srp	43	f1	0.421317
+BRACS	Prov-GigaPath LongNet	gated_srp	44	f1	0.413563
+BRACS	Prov-GigaPath LongNet	gated_srp	45	f1	0.385275
+BRACS	Prov-GigaPath LongNet	gated_srp	46	f1	0.304104
+BRACS	Dense MHSA	baseline	42	f1	0.388649
+BRACS	Dense MHSA	baseline	43	f1	0.337504
+BRACS	Dense MHSA	baseline	44	f1	0.485340
+BRACS	Dense MHSA	baseline	45	f1	0.534604
+BRACS	Dense MHSA	baseline	46	f1	0.328504
+BRACS	Dense MHSA	gated_srp	42	f1	0.428134
+BRACS	Dense MHSA	gated_srp	43	f1	0.336522
+BRACS	Dense MHSA	gated_srp	44	f1	0.466212
+BRACS	Dense MHSA	gated_srp	45	f1	0.542290
+BRACS	Dense MHSA	gated_srp	46	f1	0.364986

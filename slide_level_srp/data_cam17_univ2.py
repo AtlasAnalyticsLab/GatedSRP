@@ -112,7 +112,7 @@ class Cam17UniV2SlideDataset(Dataset):
             raise ValueError(f"{record.h5_path}: empty CAM17 UNI-v2 feature bag")
 
         if self.subsample_cap is not None and feats.shape[0] > self.subsample_cap:
-            # Deterministic coordinate-spaced safety cap: keeps all ablation
+            # Deterministic coordinate-spaced safety cap: keeps all variant
             # arms paired and avoids introducing a stochastic patch sampler.
             order = np.lexsort((coords[:, 1], coords[:, 0]))
             keep = np.linspace(0, feats.shape[0] - 1, num=self.subsample_cap, dtype=np.int64)

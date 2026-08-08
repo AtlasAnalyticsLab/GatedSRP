@@ -73,6 +73,11 @@ _GATE_FACTORIZATIONS = (
     "head_only",
     "no_bias",
 )
+_GATE_DELTA_MODES = (
+    "fixed",
+    "direct_beta_softclip",
+)
+_DIRECT_BETA_MAX = 2.0
 
 
 def bounded_signed_activation(
@@ -181,6 +186,7 @@ class TokenHeadGate(nn.Module):
         activation: str = "tanh",
         activation_temperature: float = 1.0,
         factorization: str = "full",
+        delta_mode: str = "fixed",
     ) -> None:
         super().__init__()
         # Validation: public CLI/config validation must
@@ -203,6 +209,10 @@ class TokenHeadGate(nn.Module):
             raise ValueError(
                 f"factorization must be one of {_GATE_FACTORIZATIONS}, got {factorization!r}"
             )
+        if delta_mode not in _GATE_DELTA_MODES:
+            raise ValueError(
+                f"delta_mode must be one of {_GATE_DELTA_MODES}, got {delta_mode!r}"
+            )
         if activation_temperature <= 0.0:
             raise ValueError(
                 "activation_temperature must be positive, got "
@@ -219,6 +229,7 @@ class TokenHeadGate(nn.Module):
         self.activation = activation
         self.activation_temperature = float(activation_temperature)
         self.factorization = factorization
+        self.delta_mode = delta_mode
         self.use_token_term = factorization in ("full", "token_only", "no_bias")
         self.use_head_term = factorization in ("full", "head_only", "no_bias")
         self.use_bias_term = factorization != "no_bias"
@@ -276,7 +287,7 @@ class TokenHeadGate(nn.Module):
 
         # Output-path init. Apply AFTER nn.Linear's default Kaiming init
         # has run, so hidden-layer weights are random while the output
-        # path follows the requested ablation arm.
+        # path follows the requested variant arm.
         self.reset_output_path()
 
     def reset_output_path(self) -> None:
@@ -284,7 +295,7 @@ class TokenHeadGate(nn.Module):
 
         Parent models run broad `_init_weights()` passes after module
         construction. They must call this method afterwards so gate
-        output-path ablations survive those generic initialization
+        output-path variants survive those generic initialization
         routines. Defaults are exact zero identity, matching the
         original signed-gate behavior.
         """
@@ -343,10 +354,19 @@ class TokenHeadGate(nn.Module):
                         "constant_beta gate initialization requires a bias "
                         "term and is incompatible with factorization='no_bias'"
                     )
-                raw = _inverse_bounded_activation(
-                    self.init_beta0 / self.delta_scale,
-                    self.activation,
-                )
+                if self.delta_mode == "direct_beta_softclip":
+                    # The direct mode evaluates g(raw / 2) and then scales by
+                    # the reflection bound 2. Inverting that exact formula
+                    # keeps constant-beta initialization numerically faithful.
+                    raw = _DIRECT_BETA_MAX * _inverse_bounded_activation(
+                        self.init_beta0 / _DIRECT_BETA_MAX,
+                        self.activation,
+                    )
+                else:
+                    raw = _inverse_bounded_activation(
+                        self.init_beta0 / self.delta_scale,
+                        self.activation,
+                    )
                 # Layer/head bias is the only non-zero output-path term,
                 # so every token/head starts at the same beta value.
                 self.layer_head_bias.fill_(raw)
@@ -361,7 +381,7 @@ class TokenHeadGate(nn.Module):
         This remains available for tests and exact-identity probes.
         Parent modules should normally call `reset_output_path()` after
         their broad `_init_weights()` pass so non-zero initialization
-        ablation arms are preserved.
+        variant arms are preserved.
 
         Hidden-layer weights are NOT reset here: they should stay at
         whatever the parent module's init scheme produces (typically
@@ -376,6 +396,21 @@ class TokenHeadGate(nn.Module):
             self.head_weight.zero_()
             self.head_bias.zero_()
             self.layer_head_bias.zero_()
+
+    def current_delta(self) -> torch.Tensor:
+        """Return the effective coefficient range used by this gate.
+
+        ``fixed`` uses the configured dataset-level range. The bounded direct
+        parameterization uses the geometry-derived reflection range ``[-2,2]``
+        and therefore does not depend on ``delta_scale``.
+        """
+
+        value = (
+            _DIRECT_BETA_MAX
+            if self.delta_mode == "direct_beta_softclip"
+            else self.delta_scale
+        )
+        return self.layer_head_bias.new_tensor(value)
 
     def forward(
         self,
@@ -438,12 +473,17 @@ class TokenHeadGate(nn.Module):
 
         # u: (B, 1, N, 1) -> broadcasts across heads with d's H.
         raw = u + d + b                                     # (B, H, N, 1)
+        gate_input = (
+            raw / _DIRECT_BETA_MAX
+            if self.delta_mode == "direct_beta_softclip"
+            else raw
+        )
         gate = bounded_signed_activation(
-            raw,
+            gate_input,
             mode=self.activation,
             temperature=self.activation_temperature,
         )
-        beta_eff = self.delta_scale * gate
+        beta_eff = self.current_delta() * gate
         return beta_eff
 
 
@@ -706,7 +746,7 @@ def collect_gate_module_ids(model: nn.Module) -> set[int]:
 
     The fix is to leave the gate's submodules at their PyTorch-default
     init (Kaiming for nn.Linear) and let the gate's own
-    `reset_output_path()` apply the requested output-path ablation.
+    `reset_output_path()` apply the requested output-path variant.
     The parent's trunc_normal pass then touches exactly the same modules
     in baseline and signed-gated builds, so non-gate weights are
     bit-identical.

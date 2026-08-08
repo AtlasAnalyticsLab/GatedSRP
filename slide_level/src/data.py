@@ -27,7 +27,7 @@ Task:
 
   Why 4-class is the main task: binary at UNI v1 feature quality
   saturates too quickly -- macro metastases are trivially detectable
-  and dominate the positive class, leaving no room for ablation
+  and dominate the positive class, leaving no room for variant
   separation. The 4-way split reintroduces the detection difficulty
   (itc is tiny tumor regions; micro is moderate; macro is obvious).
 
@@ -37,7 +37,7 @@ Split design:
   deterministically split into 70 train + 10 val. val_patients_per_fold
   defaults to 10 so the val draw is exactly 2 patients per center on
   CAM17's 5-center grid. Fold assignments are identical across
-  ablations -- this is essential for the released paired per-slide comparison.
+  variants -- this is essential for the released paired per-slide comparison.
 
 Sequence-length handling:
   Training, val, and test are all uncapped by default. A hard safety
@@ -234,7 +234,7 @@ def _center_stratified_patient_partition(
 @dataclass(frozen=True)
 class FoldAssignment:
     """
-    Precomputed fold + train/val/test split. Identical across ablations.
+    Precomputed fold + train/val/test split. Identical across variants.
 
     Attributes:
       fold_id:         which outer fold is the test fold (0..n_folds-1)

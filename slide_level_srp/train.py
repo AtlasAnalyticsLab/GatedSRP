@@ -1,6 +1,6 @@
 """Single-run training entry for slide-level classification.
 
-The CLI selects one attention backend with `--ablation`: NA, XSA, Diff, fixed
+The CLI selects one attention backend with `--variant`: NA, XSA, Diff, fixed
 SRP variants, or signed-gated SRP. Dataset adapters provide each WSI bag plus
 the neighbor tensors needed by local spatial redundancy projection.
 """
@@ -38,7 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Stage-2 imports — used for the xsa_all_ref ablation ONLY (baseline
+# Stage-2 imports — used for the xsa_all_ref variant ONLY (baseline
 # now routes through the SRP backend with beta_patch=0, which is
 # numerically equivalent to stage-2 α=0 per tests/test_srp_attention::test_I).
 from slide_level.src.aggregator import NystromXSAggregator
@@ -52,6 +52,15 @@ from slide_level.src.diagnostics import (
 
 # slide-level SRP (SRP) imports.
 from slide_level_srp.src.diff_transformer import NystromDiffTransformerAggregator
+from slide_level_srp.src.dense_srp_aggregator import DenseAttentionSRPAggregator
+from slide_level_srp.src.mil_baselines import (
+    build_mil_baseline_aggregator,
+    dsmil_dual_stream_cross_entropy,
+)
+from slide_level_srp.src.official_architectures import (
+    OfficialGigaPathLongNetAggregator,
+    OfficialSPANAggregator,
+)
 from slide_level_srp.src.srp_aggregator import NystromSRPAggregator
 from slide_level_srp.src.srp_diagnostics import (
     StatsAccumulator as SRPStatsAccumulator,
@@ -71,28 +80,30 @@ from slide_level_srp.data_ext import (
 
 # --- Method-parameter classifier -------------------------------------
 # Single source of truth for "what counts as a method-specific parameter
-# for this ablation". Used by:
+# for this variant". Used by:
 #   - --freeze_others (the conditional-optimum probe)
 #   - method-parameter counts / names in the startup log
 #   - optimizer weight-decay grouping
 #   - --ab_lr_mult LR scaling
 #   - W&B / artifact logging
 #
-# For non-signed-gated ablations, the method scalars are alpha/beta. For
+# For non-signed-gated variants, the method scalars are alpha/beta. For
 # `srp_patch_signed_gated`, the actual learnables live under `gate.*`
 # (e.g. blocks.{i}.attn.gate.token_mlp_*.weight, gate.head_weight,
 # gate.head_bias, gate.layer_head_bias) and `beta_patch` becomes a
 # non-trainable buffer. Previously, freeze_others on a signed-gated run
 # would freeze every gate parameter → zero method params trainable.
-_SIGNED_GATE_ABLATIONS = {
+_SIGNED_GATE_VARIANTS = {
     "srp_patch_signed_gated",
     "srp_patch_signed_gated_pre_q",
     "srp_patch_signed_gated_pre_k",
     "srp_patch_signed_gated_pre_v",
 }
-_LEARNED_R_SIGNED_GATE_ABLATIONS = {"srp_patch_signed_gated_learned_r"}
-_RCD_ABLATIONS = {"srp_patch_rcd", "srp_patch_rcd_learned_r"}
-_MLP_CONTROL_ABLATIONS = {"srp_patch_mlp_control"}
+_LEARNED_R_SIGNED_GATE_VARIANTS = {"srp_patch_signed_gated_learned_r"}
+_RCD_VARIANTS = {"srp_patch_rcd", "srp_patch_rcd_learned_r"}
+_MLP_CONTROL_VARIANTS = {"srp_patch_mlp_control"}
+_DENSE_SRP_VARIANTS = {"dense_mhsa_srp"}
+_OFFICIAL_ARCH_SRP_VARIANTS = {"official_span_srp", "official_longnet_srp"}
 _SIGNED_GATE_SRP_MODES = {
     "post_agg_signed_gated",
     "post_agg_signed_gated_learned_r",
@@ -100,24 +111,26 @@ _SIGNED_GATE_SRP_MODES = {
     "pre_k_signed_gated",
     "pre_v_signed_gated",
 }
-_GATE_L2_ABLATIONS = _SIGNED_GATE_ABLATIONS | _LEARNED_R_SIGNED_GATE_ABLATIONS
-_METHOD_SURFACE_ABLATIONS = (
-    _SIGNED_GATE_ABLATIONS
-    | _LEARNED_R_SIGNED_GATE_ABLATIONS
-    | _RCD_ABLATIONS
-    | _MLP_CONTROL_ABLATIONS
+_GATE_L2_VARIANTS = _SIGNED_GATE_VARIANTS | _LEARNED_R_SIGNED_GATE_VARIANTS
+_METHOD_SURFACE_VARIANTS = (
+    _SIGNED_GATE_VARIANTS
+    | _LEARNED_R_SIGNED_GATE_VARIANTS
+    | _RCD_VARIANTS
+    | _MLP_CONTROL_VARIANTS
+    | _DENSE_SRP_VARIANTS
+    | _OFFICIAL_ARCH_SRP_VARIANTS
 )
 
 
-def is_method_param(name: str, ablation: str) -> bool:
+def is_method_param(name: str, variant: str) -> bool:
     """Return True iff `name` is a method-specific learnable parameter
-    for the given ablation."""
-    if ablation in _SIGNED_GATE_ABLATIONS:
+    for the given variant."""
+    if variant in _SIGNED_GATE_VARIANTS:
         # Match per-block gate sub-modules; e.g.
         # `blocks.0.attn.gate.head_weight`,
         # `blocks.2.attn.gate.token_mlp_hidden.bias`.
         return ".gate." in name or name.startswith("gate.")
-    if ablation in _LEARNED_R_SIGNED_GATE_ABLATIONS:
+    if variant in _LEARNED_R_SIGNED_GATE_VARIANTS:
         # Standalone Method 2.4 is the original signed-gate surface plus a
         # learned local-r scorer.  It deliberately excludes rcd_recomposer.*
         # so freeze/method-only probes cannot accidentally train Method 2.1.
@@ -127,10 +140,10 @@ def is_method_param(name: str, ablation: str) -> bool:
             or ".context_scorer." in name
             or name.startswith("context_scorer.")
         )
-    if ablation in _RCD_ABLATIONS:
+    if variant in _RCD_VARIANTS:
         # Method 2.1 lives under rcd_recomposer.  Method 2.4 adds the
         # context_scorer surface.  beta_patch is a non-trainable zero
-        # buffer for these ablations and should not be treated as the
+        # buffer for these variants and should not be treated as the
         # learnable method mechanism.
         return (
             ".rcd_recomposer." in name
@@ -138,61 +151,67 @@ def is_method_param(name: str, ablation: str) -> bool:
             or ".context_scorer." in name
             or name.startswith("context_scorer.")
         )
-    if ablation in _MLP_CONTROL_ABLATIONS:
+    if variant in _MLP_CONTROL_VARIANTS:
         # Reported mechanism-vs-capacity control: the only method surface
         # is the no-geometry plain adapter.  beta_patch is a frozen zero
         # buffer and should not be counted as a trainable SRP mechanism.
         return ".mlp_control." in name or name.startswith("mlp_control.")
-    # All other ablations: classical alpha/beta scalars.
+    if variant in _DENSE_SRP_VARIANTS:
+        return ".gate." in name or name.startswith("gate.")
+    if variant in _OFFICIAL_ARCH_SRP_VARIANTS:
+        return ".srp_modules." in name or name.startswith("srp_modules.")
+    # All other variants: classical alpha/beta scalars.
     return ("alpha_cls" in name or "alpha_patch" in name or
             "beta_patch" in name)
 
 
-def is_method_no_decay(name: str, ablation: str) -> bool:
+def is_method_no_decay(name: str, variant: str) -> bool:
     """Return True iff `name` is a method-specific param that should
     receive `weight_decay=0`. This is a SUBSET of `is_method_param` —
     every method no-decay param is a method param, but not vice versa.
 
-    For non-signed-gated ablations: all alpha/beta scalars are no-decay.
+    For non-signed-gated variants: all alpha/beta scalars are no-decay.
     For signed-gated: only gate **biases** (`*.layer_head_bias`,
     `*.head_bias`, gate-internal `*.bias`) are no-decay; gate **weights**
     receive the normal weight_decay (the optimizer setup specifies that biases
     initialized at zero must not be pulled back to zero by AdamW decay,
     but weights have no such constraint).
     """
-    if ablation in _SIGNED_GATE_ABLATIONS:
+    if variant in _SIGNED_GATE_VARIANTS:
         return (
             ".gate." in name
             and (name.endswith(".layer_head_bias")
                  or name.endswith(".head_bias")
                  or name.endswith(".bias"))
         )
-    if ablation in _LEARNED_R_SIGNED_GATE_ABLATIONS:
+    if variant in _LEARNED_R_SIGNED_GATE_VARIANTS:
         return (
-            is_method_param(name, ablation)
+            is_method_param(name, variant)
             and (name.endswith(".layer_head_bias")
                  or name.endswith(".head_bias")
                  or name.endswith(".bias"))
         )
-    if ablation in _RCD_ABLATIONS:
+    if variant in _RCD_VARIANTS:
         return (
-            is_method_param(name, ablation)
+            is_method_param(name, variant)
             and (name.endswith(".bias") or name.endswith("_diag_delta"))
         )
-    if ablation in _MLP_CONTROL_ABLATIONS:
-        return is_method_param(name, ablation) and name.endswith(".bias")
+    if variant in _MLP_CONTROL_VARIANTS:
+        return is_method_param(name, variant) and name.endswith(".bias")
+    if variant in (_DENSE_SRP_VARIANTS | _OFFICIAL_ARCH_SRP_VARIANTS):
+        return is_method_param(name, variant) and name.endswith(".bias")
     return ("alpha_cls" in name or "alpha_patch" in name or
             "beta_patch" in name)
 
 
-# --- Ablation spec ------------------------------------------------------
+# --- Model variants -----------------------------------------------------
 
-# Map --ablation to (backend, kwargs for the model-specific constructor).
+# Map --variant to the backend and model-specific constructor arguments.
 # backend == "xsa":  use stage-2 NystromXSAggregator, forwarded(features).
 # backend == "diff": use Diff Transformer comparator, forwarded(features).
 # backend == "srp":  use slide-level SRP NystromSRPAggregator, forwarded(features,
 #                    neighbor_index, neighbor_mask, h_morph=h_morph).
-_ABLATIONS = {
+_VARIANTS = {
     # baseline now runs through the SRP backend with beta_patch=zero so
     # SRP-specific diagnostics (cos(y, r), h^V, cos(y_cls, r̄)) are
     # captured against the same reference point the SRP variants are
@@ -203,6 +222,37 @@ _ABLATIONS = {
     "baseline": {
         "backend": "srp",
         "beta_patch_mode": "zero", "srp_mode": "post_agg",
+    },
+    "nystrom_na": {
+        "backend": "nystrom_na",
+        "alpha_cls_mode": "zero", "alpha_patch_mode": "zero",
+    },
+    "dense_mhsa": {
+        "backend": "dense_mhsa", "use_srp": False,
+    },
+    "dense_mhsa_srp": {
+        "backend": "dense_mhsa", "use_srp": True,
+    },
+    "abmil": {
+        "backend": "mil_baseline", "baseline_kind": "abmil",
+    },
+    "dsmil": {
+        "backend": "mil_baseline", "baseline_kind": "dsmil",
+    },
+    "official_transmil": {
+        "backend": "mil_baseline", "baseline_kind": "official_transmil",
+    },
+    "official_span_baseline": {
+        "backend": "official_arch", "official_family": "span", "use_srp": False,
+    },
+    "official_span_srp": {
+        "backend": "official_arch", "official_family": "span", "use_srp": True,
+    },
+    "official_longnet_baseline": {
+        "backend": "official_arch", "official_family": "longnet", "use_srp": False,
+    },
+    "official_longnet_srp": {
+        "backend": "official_arch", "official_family": "longnet", "use_srp": True,
     },
     # xsa_all_ref keeps the stage-2 backend because it tests the original
     # XSA formulation (self-direction projection, not SRP).
@@ -239,7 +289,7 @@ _ABLATIONS = {
     # to ≈1 from any start) or the β gradient is genuinely too weak
     # (β stays near its init regardless). All three share β_mode=learn
     # and srp_mode=post_agg so the only axis varied is the init. Each
-    # ablation pins beta_init via the spec, so the launcher doesn't need
+    # variant pins beta_init via the spec, so the launcher doesn't need
     # to thread --beta_init on the CLI.
     "srp_patch_learn_init0": {
         "backend": "srp",
@@ -310,7 +360,7 @@ _ABLATIONS = {
         "beta_patch_mode": "fixed", "srp_mode": "post_agg_gated",
         "beta_init": 2.0,
     },
-    # Pre-aggregation reflection (fixed-beta final follow-up).
+    # Pre-aggregation reflection isolates placement while preserving vector norms.
     # v'_j = v_j - 2·(v_j·r̂_j)·r̂_j applied BEFORE Nyström aggregation.
     # β̃=1 pre_v was catastrophic in fixed-beta (F1=0.49) because it
     # projected away ~50% of each v_j's magnitude (ρ=0.48), destroying
@@ -327,14 +377,14 @@ _ABLATIONS = {
     # --- signed-gate (the signed-gate design). The
     # `beta_patch_mode='signed_gated'` + `srp_mode='post_agg_signed_gated'`
     # pair is mandatory; the aggregator asserts this. delta_scale is a
-    # CLI flag (--delta_scale) so the same ablation can be run at
+    # CLI flag (--delta_scale) so the same variant can be run at
     # δ=1 (signed-projection range) or δ=2 (full reflection range).
     "srp_patch_signed_gated": {
         "backend": "srp",
         "beta_patch_mode": "signed_gated",
         "srp_mode": "post_agg_signed_gated",
     },
-    # --- Pre-attention signed-gated SRP placement ablations. These keep
+    # --- Pre-attention signed-gated SRP placement variants. These keep
     # the same TokenHeadGate surface as srp_patch_signed_gated but move the
     # signed SRP operator before attention: after Q, after K, or after V.
     # The aggregator keeps final-block gates active only for pre-K/pre-V,
@@ -473,7 +523,7 @@ def _compute_h_local_torch(
     safe_idx = nbi.clamp(min=0)                                   # (B, N, K)
     B, N, _ = feats.shape
     # Match the actual neighbour slot count instead of assuming 3x3/8 slots.
-    # Larger neighbour-window ablations (5x5/7x7) produce more slots and must
+    # Larger neighbour-window variants (5x5/7x7) produce more slots and must
     # share the same h_local path as the default signed-gate baseline.
     K = int(safe_idx.shape[-1])
     batch_idx = torch.arange(B, device=feats.device).view(B, 1, 1).expand(B, N, K)
@@ -484,10 +534,11 @@ def _compute_h_local_torch(
     return cos.sum(dim=-1) / cnt                                  # (B, N)
 
 
-def _model_forward(model, batch, backend: str, device, ablation_spec=None):
+def _model_forward(model, batch, backend: str, device, variant_spec=None):
     """
     Run the model forward for one collated batch.
 
+    backend == "nystrom_na" -> no-correction Nyström model.
     backend == "xsa"  -> stage-2 model; only `features` consumed.
     backend == "diff" -> Diff Transformer comparator; only `features`
                          consumed.
@@ -501,13 +552,54 @@ def _model_forward(model, batch, backend: str, device, ablation_spec=None):
     For efficiency the SRP tensors are moved to device only when backend
     == "srp"; otherwise they are left on CPU in the batch dict.
 
-    `ablation_spec` is the entry from `_ABLATIONS[args.ablation]`. We
+    `variant_spec` is the entry from `_VARIANTS[args.variant]`. We
     only need it to detect whether the SRP mode requires h_local; if
     None (legacy callers) we behave as if signed-gated is off.
     """
     feats = batch["features"].to(device, non_blocking=True)
-    if backend in {"xsa", "diff"}:
+    if backend in {"nystrom_na", "xsa", "diff", "mil_baseline"}:
         return model(feats)
+    if backend == "dense_mhsa":
+        if not bool((variant_spec or {}).get("use_srp", False)):
+            return model(feats)
+        neighbor_index = batch["neighbor_index"].to(device, non_blocking=True)
+        neighbor_mask = batch["neighbor_mask"].to(device, non_blocking=True)
+        neighbor_weight = batch.get("neighbor_weight")
+        if neighbor_weight is not None:
+            neighbor_weight = neighbor_weight.to(device, non_blocking=True)
+        h_local = _compute_h_local_torch(feats, neighbor_index, neighbor_mask)
+        return model(
+            feats,
+            neighbor_index=neighbor_index,
+            neighbor_mask=neighbor_mask,
+            h_local=h_local,
+            neighbor_weight=neighbor_weight,
+        )
+    if backend == "official_arch":
+        coords = batch.get("coords")
+        coords = coords.to(device, non_blocking=True) if coords is not None else None
+        neighbor_index = batch.get("neighbor_index")
+        neighbor_mask = batch.get("neighbor_mask")
+        neighbor_weight = batch.get("neighbor_weight")
+        neighbor_index = (
+            neighbor_index.to(device, non_blocking=True)
+            if neighbor_index is not None else None
+        )
+        neighbor_mask = (
+            neighbor_mask.to(device, non_blocking=True)
+            if neighbor_mask is not None else None
+        )
+        neighbor_weight = (
+            neighbor_weight.to(device, non_blocking=True)
+            if neighbor_weight is not None else None
+        )
+        return model(
+            feats,
+            coords=coords,
+            neighbor_index=neighbor_index,
+            neighbor_mask=neighbor_mask,
+            neighbor_weight=neighbor_weight,
+        )
     # SRP path.
     neighbor_index = batch["neighbor_index"].to(device, non_blocking=True)
     neighbor_mask  = batch["neighbor_mask"].to(device, non_blocking=True)
@@ -516,10 +608,10 @@ def _model_forward(model, batch, backend: str, device, ablation_spec=None):
         neighbor_weight = neighbor_weight.to(device, non_blocking=True)
     h_morph        = batch["h_morph"].to(device, non_blocking=True)
     needs_h_local = bool(
-        ablation_spec is not None
+        variant_spec is not None
         and (
-            ablation_spec.get("srp_mode") in _SIGNED_GATE_SRP_MODES
-            or ablation_spec.get("srp_mode") == "post_agg_rcd_learned_r"
+            variant_spec.get("srp_mode") in _SIGNED_GATE_SRP_MODES
+            or variant_spec.get("srp_mode") == "post_agg_rcd_learned_r"
         )
     )
     if needs_h_local:
@@ -543,7 +635,7 @@ def run_eval(
     autocast_dtype=torch.bfloat16,
     collect_per_slide: bool = False,
     collect_per_slide_diagnostics: bool = False,
-    ablation_spec: dict | None = None,
+    variant_spec: dict | None = None,
     collect_gate_stats: bool = False,
 ):
     """
@@ -559,7 +651,7 @@ def run_eval(
     returned as the fourth element.
     """
     model.eval()
-    if backend == "xsa":
+    if backend in {"nystrom_na", "xsa"}:
         set_capture_mode_fn = set_capture_mode_xsa
         extract_stats_fn = extract_batch_stats_xsa
         Acc = XSAStatsAccumulator
@@ -608,7 +700,7 @@ def run_eval(
             with autocast_ctx(device, autocast_dtype):
                 logits = _model_forward(
                     model, batch, backend, device,
-                    ablation_spec=ablation_spec,
+                    variant_spec=variant_spec,
                 )
                 loss_per_slide = F.cross_entropy(
                     logits.float(), labels, reduction="sum",
@@ -627,7 +719,7 @@ def run_eval(
 
             # Per-slide covariate for the homogeneity regression
             # (by design). Computed from the raw UNI-derived h^morph,
-            # slide-intrinsic regardless of ablation.
+            # slide-intrinsic regardless of variant.
             mean_h_morph = float(batch["h_morph"].mean().item()) if "h_morph" in batch else float("nan")
 
             if collect_per_slide:
@@ -745,19 +837,25 @@ def parse_args():
                    choices=["online", "offline", "disabled"])
     p.add_argument("--out_dir", type=str, default="./runs")
 
-    p.add_argument("--ablation", type=str, required=True,
-                   choices=list(_ABLATIONS.keys()),
-                   help="One of: " + ", ".join(_ABLATIONS.keys()))
+    p.add_argument(
+        "--variant",
+        dest="variant",
+        metavar="VARIANT",
+        type=str,
+        required=True,
+        choices=list(_VARIANTS.keys()),
+        help="Model variant. One of: " + ", ".join(_VARIANTS.keys()),
+    )
     p.add_argument("--beta_init", type=float, default=1.0,
                    help="Init value for learnable beta_patch (SRP backends only).")
     # Signed-gate parameters.
-    # Only consumed under signed-gated SRP ablations; ignored otherwise.
+    # Only consumed under signed-gated SRP variants; ignored otherwise.
     # Default δ=2 covers identity / anti-SRP / projection / reflection in
     # [-2, +2]; pass --delta_scale 1.0 for signed-projection-only variants.
     p.add_argument("--delta_scale", type=float, default=2.0,
                    help="Signed-gate range bound: β_eff = δ · tanh(raw). "
                         "Default 2.0 covers reflection. "
-                        "Used with signed-gated SRP ablations.")
+                        "Used with signed-gated SRP variants.")
     p.add_argument("--gate_hidden_dim", type=int, default=16,
                    help="Token-MLP hidden width for the signed gate.")
     p.add_argument("--gate_output_init", type=str, default="zero",
@@ -769,9 +867,19 @@ def parse_args():
                    choices=["tanh", "scaled_sigmoid", "sigmoid01",
                             "softsign", "hardtanh", "atan"])
     p.add_argument("--gate_activation_temperature", type=float, default=1.0)
+    p.add_argument(
+        "--gate_delta_mode",
+        type=str,
+        default="fixed",
+        choices=["fixed", "direct_beta_softclip"],
+        help=(
+            "fixed uses beta=delta*tanh(raw); direct_beta_softclip uses "
+            "beta=2*tanh(raw/2) without a dataset-selected delta."
+        ),
+    )
     p.add_argument("--gate_factorization", type=str, default="full",
                    choices=["full", "token_only", "head_only", "no_bias"],
-                   help="Signed-gate factorization ablation. full uses token "
+                   help="Signed-gate factorization variant. full uses token "
                         "MLP + head diagnostics + biases; token_only drops "
                         "head diagnostics; head_only drops token diagnostics; "
                         "no_bias keeps token/head terms but removes head and "
@@ -784,8 +892,8 @@ def parse_args():
                         "training objective for signed-gated SRP runs.")
     p.add_argument("--rcd_adapter_kind", type=str, default="lowrank",
                    choices=["lowrank", "diag"],
-                   help="Method 2.1 branch map type for RCD ablations. "
-                        "lowrank is the primary design; diag is a lower-"
+                   help="Method 2.1 branch map type for RCD variants. "
+                        "lowrank is the default design; diag is a lower-"
                         "capacity control.")
     p.add_argument("--rcd_rank", type=int, default=16,
                    help="Low-rank bottleneck for Method 2.1 RCD branch maps.")
@@ -807,13 +915,13 @@ def parse_args():
                         "parameters.")
     p.add_argument("--stage2_lr_mult", type=float, default=1.0,
                    help="Multiplier applied to the base LR schedule during "
-                        "the second stage. Primary protocol keeps this at 1.0.")
+                        "the second stage. Evaluated runs keep this at 1.0.")
     p.add_argument("--no_detach_gate_inputs", action="store_true",
                    help="Disable the default detach convention: let "
                         "gradients flow through gate diagnostic inputs "
                         "(cos_yr / y_norms) into y. Default is the "
                         "detached regime; this flag enables the live-input "
-                        "ablation.")
+                        "variant.")
     p.add_argument("--no_ppeg", action="store_true",
                    help="Replace "
                         "PPEG with nn.Identity to test whether the "
@@ -828,11 +936,36 @@ def parse_args():
     p.add_argument("--neighbor_shell", type=str, default="cumulative",
                    choices=["cumulative", "ring"])
     p.add_argument("--neighbor_source", type=str, default="real",
-                   choices=["real", "shuffled"])
+                   choices=["real", "shuffled", "nearest_retained"])
     p.add_argument("--neighbor_shuffle_seed", type=int, default=0)
     p.add_argument("--neighbor_weighting", type=str, default="uniform",
                    choices=["uniform", "gaussian", "inverse_distance"])
     p.add_argument("--neighbor_weight_sigma", type=float, default=1.0)
+    p.add_argument(
+        "--subsample_mode",
+        type=str,
+        default="coord_uniform",
+        choices=["coord_uniform", "random_retained"],
+        help="Patch-cap policy; dense-attention runs use random_retained.",
+    )
+    p.add_argument(
+        "--subsample_seed",
+        type=int,
+        default=None,
+        help="Retained-patch seed. Defaults to global_seed when set, else seed.",
+    )
+    p.add_argument(
+        "--srp_context_impl",
+        type=str,
+        default="streaming_mean",
+        choices=["streaming_mean", "stacked"],
+    )
+    p.add_argument(
+        "--srp_correction_chunk_size",
+        type=int,
+        default=32768,
+        help="Patch rows per exact Gated SRP correction chunk; 0 disables chunking.",
+    )
     p.add_argument("--drop_path", type=float, default=0.1)
     p.add_argument("--checkpoint_mode", type=str, default="whole_block",
                    choices=["whole_block", "per_module", "off"])
@@ -883,6 +1016,12 @@ def parse_args():
     p.add_argument("--num_classes", type=int, default=4)
     p.add_argument("--embed_dim", type=int, default=384)
     p.add_argument("--depth", type=int, default=4)
+    p.add_argument(
+        "--official_longnet_depth",
+        type=int,
+        default=12,
+        help="Depth of the optional official Prov-GigaPath LongNet encoder.",
+    )
     p.add_argument("--num_heads", type=int, default=6)
     p.add_argument("--num_landmarks", type=int, default=64)
     p.add_argument("--pinv_iterations", type=int, default=6)
@@ -899,9 +1038,8 @@ def parse_args():
                         "bracs = BRACS WSI-level 7-class UNI-v2 classification.")
     p.add_argument("--kgh_true_4class", action="store_true",
                    help="Keep KGH as the intended disease-only 4-output task. "
-                        "Without this opt-in, legacy KGH runs preserve the "
-                        "historical 5-output compatibility path so old "
-                        "phase00b artifacts remain reproducible.")
+                        "Without this opt-in, existing KGH commands retain "
+                        "their 5-output compatibility path.")
     p.add_argument("--in_dim", type=int, default=1024,
                    help="Per-patch feature dim. legacy CAM17 UNI-v1 = 1024; "
                         "CAM17 UNI-v2 = 1536; "
@@ -928,7 +1066,7 @@ def parse_args():
     p.add_argument("--init_from_checkpoint", type=str, default=None,
                    help="Path to a best.pt produced by a prior run. The model "
                         "state_dict is loaded after construction and before training. "
-                        "Architecture/ablation must match the checkpoint's run.")
+                        "Architecture/variant must match the checkpoint's run.")
     p.add_argument("--freeze_others", action="store_true",
                    help="Freeze every parameter whose name does NOT contain "
                         "the active method surface. With this flag + "
@@ -989,6 +1127,29 @@ def parse_args():
             f"[parse_args] --neighbor_window must be odd and >= 3, got "
             f"{args.neighbor_window}"
         )
+    if args.srp_correction_chunk_size < 0:
+        raise SystemExit(
+            "[parse_args] --srp_correction_chunk_size must be >= 0, got "
+            f"{args.srp_correction_chunk_size}"
+        )
+    if args.official_longnet_depth <= 0:
+        raise SystemExit("[parse_args] --official_longnet_depth must be positive")
+    if args.subsample_seed is None:
+        args.subsample_seed = (
+            args.global_seed if args.global_seed is not None else args.seed
+        )
+    if args.neighbor_source == "nearest_retained":
+        caps = (args.train_cap, args.val_cap, args.test_cap)
+        if any(cap is None or cap > 4096 for cap in caps):
+            raise SystemExit(
+                "[parse_args] nearest_retained requires explicit train/val/test "
+                "caps no larger than 4096."
+            )
+        if args.subsample_mode != "random_retained":
+            raise SystemExit(
+                "[parse_args] nearest_retained is paired with "
+                "--subsample_mode random_retained."
+            )
     if args.gate_l2_reg < 0.0:
         raise SystemExit(
             f"[parse_args] --gate_l2_reg must be >= 0, got {args.gate_l2_reg}"
@@ -1024,17 +1185,17 @@ def parse_args():
         or args.srp_freeze_epochs > 0
         or args.stage2_epochs > 0
     )
-    if args.gate_l2_reg > 0.0 and args.ablation not in _GATE_L2_ABLATIONS:
+    if args.gate_l2_reg > 0.0 and args.variant not in _GATE_L2_VARIANTS:
         raise SystemExit(
             "[parse_args] --gate_l2_reg is valid only for "
-            "signed-gated SRP ablations: "
-            + ", ".join(sorted(_GATE_L2_ABLATIONS))
+            "signed-gated SRP variants: "
+            + ", ".join(sorted(_GATE_L2_VARIANTS))
         )
-    if uses_gate_protocol and args.ablation not in _METHOD_SURFACE_ABLATIONS:
+    if uses_gate_protocol and args.variant not in _METHOD_SURFACE_VARIANTS:
         raise SystemExit(
             "[parse_args] two-stage controls are valid only for explicit "
-            "method-surface ablations: "
-            + ", ".join(sorted(_METHOD_SURFACE_ABLATIONS))
+            "method-surface variants: "
+            + ", ".join(sorted(_METHOD_SURFACE_VARIANTS))
         )
     if args.srp_freeze_epochs > args.epochs:
         raise SystemExit(
@@ -1066,10 +1227,10 @@ def parse_args():
     if args.dataset == "kgh":
         if args.in_dim == 1024:
             args.in_dim = 1536
-        # KGH phase00b historically rewrote 4 requested disease classes to a
-        # 5-output head.  Keep that behavior for old commands, but provide an
-        # explicit opt-in for the corrected disease-only reruns so new fold4
-        # stability checks do not repeat the absent-class artifact.
+        # Existing KGH commands interpret four requested disease classes through
+        # a 5-output compatibility head. Preserve that checkpoint shape unless
+        # disease-only mode is explicit, avoiding an absent-class output in new
+        # runs without breaking previously trained artifacts.
         if args.num_classes == 4 and not args.kgh_true_4class:
             args.num_classes = 5
     if args.dataset == "bracs":
@@ -1081,17 +1242,17 @@ def parse_args():
 
 
 def _build_model(args, backend: str, spec: dict, device):
-    """Instantiate the correct aggregator for this ablation.
+    """Instantiate the correct aggregator for this model variant.
 
     β_init resolution order (SRP backend only):
-      1. spec["beta_init"] if present in _ABLATIONS — pins β_init for
-         the β-init sweep ablations (srp_patch_learn_init0/05/2) so the
+      1. spec["beta_init"] if present in _VARIANTS — pins β_init for
+         the β-init sweep variants (srp_patch_learn_init0/05/2) so the
          launcher doesn't need to thread --beta_init on the CLI.
       2. args.beta_init CLI flag (default 1.0) — used by the primary
-         sweep's learnable ablations (srp_patch_learn, srp_patch_preV,
+         sweep's learnable variants (srp_patch_learn, srp_patch_preV,
          srp_patch_gated), where the init is always 1.0 by design
     """
-    if backend == "xsa":
+    if backend in {"nystrom_na", "xsa"}:
         if args.ln_specialization != "shared":
             raise ValueError(
                 "--ln_specialization cls_patch is implemented for the "
@@ -1137,6 +1298,62 @@ def _build_model(args, backend: str, spec: dict, device):
             checkpoint_mode=args.checkpoint_mode,
             use_ppeg=not args.no_ppeg,
         ).to(device)
+    elif backend == "dense_mhsa":
+        if args.ln_specialization != "shared" or args.layerscale_init > 0.0:
+            raise ValueError(
+                "Dense-MHSA runs require shared LayerNorm and no LayerScale "
+                "so only the attention implementation changes."
+            )
+        model = DenseAttentionSRPAggregator(
+            in_dim=args.in_dim,
+            embed_dim=args.embed_dim,
+            depth=args.depth,
+            num_heads=args.num_heads,
+            num_classes=args.num_classes,
+            drop_path_rate=args.drop_path,
+            checkpoint_mode=args.checkpoint_mode,
+            use_srp=bool(spec["use_srp"]),
+            delta_scale=args.delta_scale,
+            gate_hidden_dim=args.gate_hidden_dim,
+            detach_gate_inputs=not args.no_detach_gate_inputs,
+            gate_output_init=args.gate_output_init,
+            gate_output_init_scale=args.gate_output_init_scale,
+            gate_init_beta0=args.gate_init_beta0,
+            gate_activation=args.gate_activation,
+            gate_activation_temperature=args.gate_activation_temperature,
+            gate_factorization=args.gate_factorization,
+            gate_delta_mode=args.gate_delta_mode,
+            gate_count_features=args.gate_count_features,
+            retain_gate_beta_for_loss=args.gate_l2_reg > 0.0,
+            use_ppeg=not args.no_ppeg,
+        ).to(device)
+    elif backend == "mil_baseline":
+        model = build_mil_baseline_aggregator(
+            kind=spec["baseline_kind"],
+            in_dim=args.in_dim,
+            num_classes=args.num_classes,
+        ).to(device)
+    elif backend == "official_arch":
+        if spec["official_family"] == "span":
+            model = OfficialSPANAggregator(
+                in_dim=args.in_dim,
+                num_classes=args.num_classes,
+                target=args.dataset,
+                use_srp=bool(spec["use_srp"]),
+                gate_hidden_dim=args.gate_hidden_dim,
+                delta_scale=args.delta_scale,
+            ).to(device)
+        else:
+            model = OfficialGigaPathLongNetAggregator(
+                in_dim=args.in_dim,
+                embed_dim=args.embed_dim,
+                depth=args.official_longnet_depth,
+                num_classes=args.num_classes,
+                use_srp=bool(spec["use_srp"]),
+                drop_path_rate=args.drop_path,
+                gate_hidden_dim=args.gate_hidden_dim,
+                delta_scale=args.delta_scale,
+            ).to(device)
     else:
         beta_init = float(spec.get("beta_init", args.beta_init))
         model = NystromSRPAggregator(
@@ -1164,7 +1381,11 @@ def _build_model(args, backend: str, spec: dict, device):
             gate_activation=args.gate_activation,
             gate_activation_temperature=args.gate_activation_temperature,
             gate_factorization=getattr(args, "gate_factorization", "full"),
+            gate_delta_mode=args.gate_delta_mode,
             gate_count_features=args.gate_count_features,
+            srp_context_impl=args.srp_context_impl,
+            srp_correction_chunk_size=args.srp_correction_chunk_size,
+            retain_gate_beta_for_loss=args.gate_l2_reg > 0.0,
             rcd_adapter_kind=args.rcd_adapter_kind,
             rcd_rank=args.rcd_rank,
             learned_r_hidden_dim=args.learned_r_hidden_dim,
@@ -1375,7 +1596,7 @@ def apply_trainability_mode(model, args, mode: str) -> dict[str, int]:
         "nonmethod_frozen": 0,
     }
     for name, param in model.named_parameters():
-        is_method = is_method_param(name, args.ablation)
+        is_method = is_method_param(name, args.variant)
         if mode == "all":
             trainable = True
         elif mode == "freeze_method":
@@ -1399,9 +1620,9 @@ def build_adamw_optimizer(model, args) -> torch.optim.Optimizer:
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if is_method_no_decay(name, args.ablation):
+        if is_method_no_decay(name, args.variant):
             method_nodecay.append(param)
-        elif is_method_param(name, args.ablation):
+        elif is_method_param(name, args.variant):
             method_decay.append(param)
         else:
             backbone_decay.append(param)
@@ -1443,11 +1664,11 @@ def method_parameter_summary(model, args) -> tuple[list[str], int, int, int]:
     """Return method names, method count, trainable count, and total count."""
     method_names = [
         name for name, param in model.named_parameters()
-        if param.requires_grad and is_method_param(name, args.ablation)
+        if param.requires_grad and is_method_param(name, args.variant)
     ]
     n_method = sum(
         param.numel() for name, param in model.named_parameters()
-        if param.requires_grad and is_method_param(name, args.ablation)
+        if param.requires_grad and is_method_param(name, args.variant)
     )
     n_trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
     n_total = sum(param.numel() for param in model.parameters())
@@ -1484,7 +1705,7 @@ def collect_gate_beta_l2(model, device) -> tuple[torch.Tensor, int]:
 
 def main() -> None:
     args = parse_args()
-    spec = _ABLATIONS[args.ablation]
+    spec = _VARIANTS[args.variant]
     backend = spec["backend"]
 
     set_seed(args.seed)
@@ -1494,7 +1715,7 @@ def main() -> None:
     # β_init=0.5 in the run header and W&B config even if the caller
     # didn't pass --beta_init 0.5.
     resolved_beta_init = float(spec.get("beta_init", args.beta_init)) if backend == "srp" else None
-    print(f"[{args.run_name}] device={device} backend={backend} ablation={args.ablation}"
+    print(f"[{args.run_name}] device={device} backend={backend} variant={args.variant}"
           + (f" beta_init={resolved_beta_init}" if resolved_beta_init is not None else "")
           + (f" layerscale_init={args.layerscale_init:g}" if backend == "srp" else "")
           + (f" ln_specialization={args.ln_specialization}"
@@ -1539,6 +1760,8 @@ def main() -> None:
             neighbor_shuffle_seed=args.neighbor_shuffle_seed,
             neighbor_weighting=args.neighbor_weighting,
             neighbor_weight_sigma=args.neighbor_weight_sigma,
+            subsample_mode=args.subsample_mode,
+            subsample_seed=args.subsample_seed,
         )
         split_metadata = _build_split_metadata(
             args=args, records=records, assignment=fa,
@@ -1777,6 +2000,8 @@ def main() -> None:
             neighbor_shuffle_seed=args.neighbor_shuffle_seed,
             neighbor_weighting=args.neighbor_weighting,
             neighbor_weight_sigma=args.neighbor_weight_sigma,
+            subsample_mode=args.subsample_mode,
+            subsample_seed=args.subsample_seed,
         )
         split_metadata = _build_split_metadata(
             args=args, records=records, assignment=fa,
@@ -1800,7 +2025,7 @@ def main() -> None:
 
     # --- Probe-mode hooks (additive; default-behavior preserved) ---------
     # 1. Optionally warm-start from an existing best.pt. Architecture
-    #    must match (same ablation), so we use strict load. weights_only=False
+    #    must match (same variant), so we use strict load. weights_only=False
     #    matches train.py's existing torch.save format which stores a dict
     #    {"epoch", "model", "args", "val_metrics"}.
     if getattr(args, "init_from_checkpoint", None):
@@ -1817,7 +2042,7 @@ def main() -> None:
     #    their trained values, α/β have no co-adaptation partner, so wherever
     #    they land is their loss-conditional optimum.
     # Validation: route `freeze_others` and method-param
-    # accounting through `is_method_param(name, args.ablation)` so that
+    # accounting through `is_method_param(name, args.variant)` so that
     # `srp_patch_signed_gated` correctly identifies `gate.*` as the
     # method's learnable surface. Previously, the predicate was
     # alpha/beta-only and would freeze the entire gate or undercount
@@ -1825,15 +2050,15 @@ def main() -> None:
     if getattr(args, "freeze_others", False):
         n_frozen, n_unfrozen = 0, 0
         for name, p in model.named_parameters():
-            if is_method_param(name, args.ablation):
+            if is_method_param(name, args.variant):
                 p.requires_grad = True
                 n_unfrozen += p.numel()
             else:
                 p.requires_grad = False
                 n_frozen += p.numel()
         which = (
-            "mlp_control.*" if args.ablation in _MLP_CONTROL_ABLATIONS
-            else "gate.*" if args.ablation in _GATE_L2_ABLATIONS
+            "mlp_control.*" if args.variant in _MLP_CONTROL_VARIANTS
+            else "gate.*" if args.variant in _GATE_L2_VARIANTS
             else "α/β"
         )
         print(f"[{args.run_name}] freeze_others ON: "
@@ -1851,13 +2076,13 @@ def main() -> None:
 
     # Collect the names of the method-specific learnable params for
     # inspection + no-decay param-group separation below. Uses the
-    # ablation-aware predicate (F2 fix).
+    # variant-aware predicate (F2 fix).
     ab_param_names, n_ab, n_params_trainable, n_params_total = method_parameter_summary(model, args)
     method_label = (
-        "gate_context_params" if args.ablation in _LEARNED_R_SIGNED_GATE_ABLATIONS
-        else "gate_params" if args.ablation in _SIGNED_GATE_ABLATIONS
-        else "rcd_params" if args.ablation in _RCD_ABLATIONS
-        else "mlp_control_params" if args.ablation in _MLP_CONTROL_ABLATIONS
+        "gate_context_params" if args.variant in _LEARNED_R_SIGNED_GATE_VARIANTS
+        else "gate_params" if args.variant in _SIGNED_GATE_VARIANTS
+        else "rcd_params" if args.variant in _RCD_VARIANTS
+        else "mlp_control_params" if args.variant in _MLP_CONTROL_VARIANTS
         else "diff_params" if backend == "diff"
         else "ab_params"
     )
@@ -1906,7 +2131,7 @@ def main() -> None:
         config={
             **vars(args),
             "backend": backend,
-            "ablation_spec": spec,
+            "variant_spec": spec,
             "resolved_beta_init": resolved_beta_init,
             "n_params_total": n_params_total,
             "n_params_trainable": n_params_trainable,
@@ -1920,7 +2145,7 @@ def main() -> None:
             "split_metadata": split_metadata,
         },
         tags=[
-            f"ablation-{args.ablation}",
+            f"variant-{args.variant}",
             f"backend-{backend}",
             f"split-{args.split_mode}",
             (
@@ -1953,7 +2178,7 @@ def main() -> None:
     # scalars, so the legacy `has_learnable_ab` branch is silent. Detect
     # signed_gated mode separately and log a small gate-step summary
     # alongside the trajectory cadence.
-    has_signed_gate = args.ablation in _GATE_L2_ABLATIONS
+    has_signed_gate = args.variant in _GATE_L2_VARIANTS
     ab_history: list[dict] = []
 
     # --- Training loop ---------------------------------------------------
@@ -2025,7 +2250,7 @@ def main() -> None:
             )
             # Validation: --ab_lr_mult scales both method groups: gate
             # weights + gate biases under signed_gated, and α/β scalars under
-            # legacy ablations. With mult=1.0 this is a no-op and preserves
+            # legacy variants. With mult=1.0 this is a no-op and preserves
             # the original training trajectory.
             method_groups = ("ab_nodecay", "method_decay")
             for pg in optimizer.param_groups:
@@ -2048,9 +2273,14 @@ def main() -> None:
             with autocast_ctx(device, torch.bfloat16):
                 logits = _model_forward(
                     model, batch, backend, device,
-                    ablation_spec=spec,
+                    variant_spec=spec,
                 )
-                ce_loss = F.cross_entropy(logits.float(), labels)
+                if backend == "mil_baseline" and spec.get("baseline_kind") == "dsmil":
+                    ce_loss = dsmil_dual_stream_cross_entropy(
+                        model, logits.float(), labels,
+                    )
+                else:
+                    ce_loss = F.cross_entropy(logits.float(), labels)
                 gate_l2, gate_l2_blocks = (
                     collect_gate_beta_l2(model, device)
                     if args.gate_l2_reg > 0.0
@@ -2143,7 +2373,7 @@ def main() -> None:
             backend=backend,
             capture_stats=True, max_stats_batches=args.val_stats_batches,
             autocast_dtype=torch.bfloat16,
-            ablation_spec=spec,
+            variant_spec=spec,
         )
 
         # Snapshot alphas or betas for W&B logging.
@@ -2218,7 +2448,7 @@ def main() -> None:
         autocast_dtype=torch.bfloat16,
         collect_per_slide=True,
         collect_per_slide_diagnostics=True,
-        ablation_spec=spec,
+        variant_spec=spec,
         collect_gate_stats=True,
     )
     print(
@@ -2287,13 +2517,13 @@ def main() -> None:
     # --- Per-slide CSV --------------------------------------------------
         # Adds mean_h_morph to the baseline per-slide schema. This is the slide-intrinsic
     # covariate the homogeneity regression (by design) consumes. Under the
-    # XSA backend (xsa_all_ref ablation only) we still compute it from the
+    # XSA backend (xsa_all_ref variant only) we still compute it from the
     # SRP data path since the batch dict always contains h_morph; it's a
     # slide-intrinsic quantity independent of model state.
     K = args.num_classes
     base_cols = [
         "slide_id", "patient_id", "fold", "center", "N_tokens",
-        "ablation", "y_true", "y_pred_class",
+        "variant", "y_true", "y_pred_class",
     ]
     logit_cols = [f"y_pred_logit_{k}" for k in range(K)]
     prob_cols = [f"y_pred_prob_{k}" for k in range(K)]
@@ -2316,7 +2546,7 @@ def main() -> None:
                 "fold": fold_for_csv,
                 "center": row["center"],
                 "N_tokens": row["N_tokens"],
-                "ablation": args.ablation,
+                "variant": args.variant,
                 "y_true": row["y_true"],
                 "y_pred_class": row["y_pred_class"],
                 "per_slide_loss": f"{row['per_slide_loss']:.6g}",
@@ -2328,8 +2558,8 @@ def main() -> None:
             writer.writerow(record)
     print(f"[{args.run_name}] wrote {csv_path}  ({len(per_slide)} rows, K={K})")
 
-    # --- Per-slide SRP diagnostics (supplementary, attention diagnostics) ---
-    # Only populated for SRP-backend ablations; for xsa_all_ref this list
+    # --- Per-slide SRP attention diagnostics ----------------------------
+    # Only populated for SRP-backend variants; for xsa_all_ref this list
     # is empty and we skip writing the npz so downstream code can
     # distinguish "SRP diagnostics unavailable" from "empty".
     if per_slide_diag:
@@ -2362,10 +2592,10 @@ def main() -> None:
             "mean_cos_yr_pre":   _stack("mean_cos_yr_pre"),      # (S, D, H)
             "mean_cos_yr_post":  _stack("mean_cos_yr_post"),     # (S, D, H)
             "z_over_y_by_h_morph_quartile":  _stack("z_over_y_by_h_morph_quartile"),  # (S, 4, D, H)
-            "ablation":       np.array([args.ablation] * len(per_slide_diag), dtype=object),
+            "variant":        np.array([args.variant] * len(per_slide_diag), dtype=object),
         }
         # pre_v-only fields (present only when srp_mode=pre_v under this
-        # ablation). We check the first record for key presence; SRP
+        # variant). We check the first record for key presence; SRP
         # mode is constant across a run.
         if "bar_rho_cls" in per_slide_diag[0]:
             psd_payload["bar_rho_cls"] = _stack("bar_rho_cls")    # (S, D, H)
@@ -2389,7 +2619,7 @@ def main() -> None:
         "stage2_lr_mult": float(args.stage2_lr_mult),
         "train_history": json.dumps(train_history),
         "backend": backend,
-        "ablation": args.ablation,
+        "variant": args.variant,
         # Store architecture-level switches inside the artifact, not only in
         # the run name/W&B config, so offline analysis can recover the exact
         # factorial arm from `test_artifacts.npz` alone.

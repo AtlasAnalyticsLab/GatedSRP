@@ -1,0 +1,17 @@
+cohort	method	metric	mean	runs
+KIRP	ABMIL	case_c_index	0.7224	5
+KIRP	DSMIL	case_c_index	0.7253	5
+KIRP	Official TransMIL	case_c_index	0.7318	5
+KIRP	Gated SRP	case_c_index	0.7648	5
+LUAD	ABMIL	case_c_index	0.5553	5
+LUAD	DSMIL	case_c_index	0.5780	5
+LUAD	Official TransMIL	case_c_index	0.5422	5
+LUAD	Gated SRP	case_c_index	0.5832	5
+STAD	ABMIL	case_c_index	0.5905	5
+STAD	DSMIL	case_c_index	0.5833	5
+STAD	Official TransMIL	case_c_index	0.5856	5
+STAD	Gated SRP	case_c_index	0.6171	5
+UCEC	ABMIL	case_c_index	0.6529	5
+UCEC	DSMIL	case_c_index	0.6621	5
+UCEC	Official TransMIL	case_c_index	0.6460	5
+UCEC	Gated SRP	case_c_index	0.6973	5

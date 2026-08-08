@@ -5,7 +5,7 @@ Differences vs. stage-2 NystromXSAggregator:
 
   (1) Each TransLayer's forward accepts (x, neighbor_index, neighbor_mask,
       is_real, h_morph) instead of just (x). All four tensors pass through
-      every block identically; h_morph is unused by non-gated ablations
+      every block identically; h_morph is unused by non-gated variants
       but carried along to keep the forward signature uniform.
 
   (2) The square-pad step builds is_real on the fly. Per the released protocol,
@@ -91,7 +91,7 @@ def _make_layer_norm(
     """Build the norm module without changing default checkpoint keys.
 
     The historical path must keep plain `nn.LayerNorm` modules named
-    `norm1`, `norm2`, and `norm`.  Active queues and old checkpoints rely on
+    `norm1`, `norm2`, and `norm`. Existing checkpoints rely on
     those exact keys.  We instantiate `RoleSplitLayerNorm` only when the new
     experiment explicitly asks for CLS/patch specialization.
     """
@@ -147,7 +147,11 @@ class SRPBlock(nn.Module):
         gate_activation: str = "tanh",
         gate_activation_temperature: float = 1.0,
         gate_factorization: str = "full",
+        gate_delta_mode: str = "fixed",
         gate_count_features: str = "legacy",
+        srp_context_impl: str = "streaming_mean",
+        srp_correction_chunk_size: int = 32768,
+        retain_gate_beta_for_loss: bool = False,
         # Method 2.1/2.4 RCD options.  These are forwarded only to the
         # explicit RCD SRP modes, so legacy SRP and signed-gate runs keep
         # their current parameter surface and behavior.
@@ -190,7 +194,11 @@ class SRPBlock(nn.Module):
             gate_activation=gate_activation,
             gate_activation_temperature=gate_activation_temperature,
             gate_factorization=gate_factorization,
+            gate_delta_mode=gate_delta_mode,
             gate_count_features=gate_count_features,
+            srp_context_impl=srp_context_impl,
+            srp_correction_chunk_size=srp_correction_chunk_size,
+            retain_gate_beta_for_loss=retain_gate_beta_for_loss,
             rcd_adapter_kind=rcd_adapter_kind,
             rcd_rank=rcd_rank,
             learned_r_hidden_dim=learned_r_hidden_dim,
@@ -213,7 +221,7 @@ class SRPBlock(nn.Module):
         else:
             # Do not register dummy parameters when disabled. This keeps old
             # checkpoints, optimizer groups, trainability counts, and active
-            # queue jobs on the exact pre-LayerScale parameter surface.
+            # paired runs on the exact pre-LayerScale parameter surface.
             self.gamma_attn = None
             self.gamma_mlp = None
 
@@ -369,13 +377,17 @@ class NystromSRPAggregator(nn.Module):
         gate_activation: str = "tanh",
         gate_activation_temperature: float = 1.0,
         gate_factorization: str = "full",
+        gate_delta_mode: str = "fixed",
         gate_count_features: str = "legacy",
+        srp_context_impl: str = "streaming_mean",
+        srp_correction_chunk_size: int = 32768,
+        retain_gate_beta_for_loss: bool = False,
         # Method 2.1/2.4 RCD controls.  They are inert unless `srp_mode`
         # is one of the new RCD modes.
         rcd_adapter_kind: str = "lowrank",
         rcd_rank: int = 16,
         learned_r_hidden_dim: int = 16,
-        # validation PPEG-removal ablation (the reported ablation). Removes the
+        # validation PPEG-removal variant (the reported variant). Removes the
         # PPEG conv-position-mixing layer between blocks 0 and 1 to test
         # the architectural-mediation hypothesis: does the δ=2 reflection
         # advantage on TransMIL require PPEG, or does it survive without?
@@ -449,7 +461,11 @@ class NystromSRPAggregator(nn.Module):
                 gate_activation=gate_activation,
                 gate_activation_temperature=gate_activation_temperature,
                 gate_factorization=gate_factorization,
+                gate_delta_mode=gate_delta_mode,
                 gate_count_features=gate_count_features,
+                srp_context_impl=srp_context_impl,
+                srp_correction_chunk_size=srp_correction_chunk_size,
+                retain_gate_beta_for_loss=retain_gate_beta_for_loss,
                 rcd_adapter_kind=rcd_adapter_kind,
                 rcd_rank=rcd_rank,
                 learned_r_hidden_dim=learned_r_hidden_dim,
@@ -458,7 +474,7 @@ class NystromSRPAggregator(nn.Module):
         ])
 
         # PPEG: enabled by default (TransMIL-faithful). Replaced with
-        # nn.Identity under the released protocol ablation. See forward() for the
+        # nn.Identity under the released protocol variant. See forward() for the
         # corresponding reshape skip.
         self.ppeg = PPEG(dim=embed_dim) if self.use_ppeg else nn.Identity()
         final_ln_specialization = (
@@ -503,7 +519,7 @@ class NystromSRPAggregator(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
         # Belt-and-suspenders gate output-path init (idempotent given
-        # the skip-set above). Uses the configured ablation init rather
+        # the skip-set above). Uses the configured variant init rather
         # than hard-resetting to zero.
         for m in self.modules():
             if isinstance(m, TokenHeadGate):
@@ -611,7 +627,7 @@ class NystromSRPAggregator(nn.Module):
             neighbor_weight,
         )
         # PPEG sees the full (B, 1+HW, D) sequence. CLS stays at position 0.
-        # Under the released protocol PPEG-removal ablation (self.use_ppeg=False),
+        # Under the released protocol PPEG-removal variant (self.use_ppeg=False),
         # self.ppeg is nn.Identity which ignores the (H, W) shape args;
         # we route around the call entirely so we don't need to forward
         # spatial dims to Identity.

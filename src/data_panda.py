@@ -72,6 +72,7 @@ PANDA_PATCH_STRIDE_L0 = 256
 # the column slice (PANDA's coords are (N, 5); we keep the first two as
 # (x, y)). Cross-validated bit-identical on real PANDA slides 2026-04-25.
 from slide_level_srp.data_ext import (                  # noqa: E402
+    apply_subsample_mode as _apply_subsample_mode_stage3,
     build_neighbor_graph as _build_neighbor_graph_stage3,
     build_neighbor_index as _build_neighbor_index_stage3,
 )
@@ -265,7 +266,7 @@ def _validate_panda_h5_metadata(
     """
     try:
         with h5py.File(h5_path, "r") as f:
-            # Encoder-selection ablations reuse the same PANDA split/loader
+            # Encoder-selection variants reuse the same PANDA split/loader
             # contract with alternate AtlasPatch feature groups.  Keep the
             # default as UNI-v2 so historical runs are bit-for-bit configured
             # the same, but validate the caller-selected key before fold split.
@@ -442,11 +443,13 @@ class PandaSlideDataset(Dataset):
         neighbor_weight_sigma: float = 1.0,
         feature_key: str = "features/uni_v2",
         feature_dim: int = UNI_DIM,
+        subsample_mode: str = "coord_uniform",
+        subsample_seed: int = 0,
     ) -> None:
         self.records = list(records)
         self.train = train
         # Defaults preserve the original UNI-v2 PANDA path.  These attributes
-        # make encoder-transfer ablations explicit in the run config instead
+        # make encoder-transfer variants explicit in the run config instead
         # of hard-coding feature groups in the dataset implementation.
         self.feature_key = feature_key
         self.feature_dim = int(feature_dim)
@@ -456,6 +459,8 @@ class PandaSlideDataset(Dataset):
         self.neighbor_shuffle_seed = int(neighbor_shuffle_seed)
         self.neighbor_weighting = neighbor_weighting
         self.neighbor_weight_sigma = float(neighbor_weight_sigma)
+        self.subsample_mode = subsample_mode
+        self.subsample_seed = int(subsample_seed)
         # Optional safety cap. Any explicit positive cap is honoured and
         # reported so the user knows truncation is active. PANDA's p100 at
         # native length is 2686, so caps below that do truncate by request.
@@ -522,11 +527,14 @@ class PandaSlideDataset(Dataset):
         # coord-sorted subsample so train and eval pass the same set
         # under the cap (no augmentation jitter).
         if self._safety_cap is not None and n_real > self._safety_cap:
-            order = np.lexsort((coords[:, 1], coords[:, 0]))
-            keep = np.linspace(0, n_real - 1, num=self._safety_cap, dtype=np.int64)
-            keep_idx = order[keep]
-            feats = feats[keep_idx]
-            coords = coords[keep_idx]
+            feats, coords = _apply_subsample_mode_stage3(
+                feats,
+                coords,
+                cap=self._safety_cap,
+                mode=self.subsample_mode,
+                seed=self.subsample_seed,
+                slide_key=f"PANDA|{r.image_id}|{r.data_provider}",
+            )
             n_real = feats.shape[0]
 
         # 8-neighbour graph at native length. Indices in [0, n_real).
@@ -629,6 +637,8 @@ def build_panda_loaders(
     neighbor_weight_sigma: float = 1.0,
     feature_key: str = "features/uni_v2",
     feature_dim: int = UNI_DIM,
+    subsample_mode: str = "coord_uniform",
+    subsample_seed: int = 0,
 ) -> Tuple[DataLoader, ...]:
     """
     Build PANDA DataLoaders.
@@ -660,6 +670,8 @@ def build_panda_loaders(
         neighbor_weight_sigma=neighbor_weight_sigma,
         feature_key=feature_key,
         feature_dim=feature_dim,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
     train_ds = PandaSlideDataset(train_records, train=True, **ds_kwargs)
     val_ds   = PandaSlideDataset(val_records, train=False, **ds_kwargs)

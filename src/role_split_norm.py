@@ -1,6 +1,6 @@
 """Token-role specialized LayerNorm utilities.
 
-The specialization tested here follows the paper's narrow intervention:
+The specialization tested here uses a deliberately narrow intervention:
 normal LayerNorm statistics are still computed per token, but the learned
 affine parameters are split by token role.  In the current ViT-style slide
 models that role split is `[CLS]` versus patch tokens.

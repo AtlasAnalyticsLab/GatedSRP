@@ -1,51 +1,48 @@
 # Checkpoints
 
-This release does not bundle trained model checkpoints.
+Trained checkpoints are not stored in this Git repository. They are generated
+outputs of the released five-seed manifests, not prerequisites for training or
+evaluation.
 
-The reported tables are intended to be reproduced by rerunning the checked-in
-manifests in `configs/` after preparing the datasets and H5 embeddings. Each
-manifest row fixes the run name, method, dataset, seed, split mode, and trainer
-arguments. The resulting local training outputs include `best.pt` files under
-the configured `runs/` directory.
+## What Each Run Produces
 
-## Why Checkpoints Are Not Included
+Every trainer writes its best task checkpoint under the configured output root:
 
-- Checkpoints are generated outputs, not required inputs for reproduction.
-- The full set of trained weights is large and redundant with the runnable
-  manifests.
-- Git source clones should stay lightweight; checkpoints, H5 embeddings, raw
-  WSIs, logs, and run folders are intentionally ignored by `.gitignore`.
+```text
+runs/<study>/<run_name>/best.pt
+```
 
-## Regenerate Checkpoints
+Classification runs also save `test_artifacts.npz`; TCGA survival runs save
+`metrics.json`, slide predictions, and case-level predictions. These metric
+artifacts are sufficient for the result collectors.
 
-For a single classification run:
+## Regenerate a Checkpoint
 
 ```bash
-python scripts/run_manifest.py configs/paper_classification.tsv \
+python scripts/run_manifest.py configs/classification_tasks.tsv \
   --where dataset=cam16 --where method=baseline --where seed=42
+
+python scripts/run_manifest.py configs/survival_tasks.tsv \
+  --where cohort=KIRP --where method=gated_post_attention --where seed=42
 ```
 
-For a single TCGA survival run:
+The exact model, split, optimizer, feature key, and seed are visible in the
+selected TSV row.
 
-```bash
-python scripts/run_manifest.py configs/paper_tcga_survival.tsv \
-  --where cohort=KIRC --where method=baseline --where seed=42
-```
+## Why Weights Are Separate
 
-The trainer writes the best checkpoint inside the selected output root, for
-example `runs/classification/<run_name>/best.pt` or
-`runs/tcga_survival_global_seed_main/<run_name>/best.pt`.
+- The full matrix contains hundreds of seed-specific models.
+- Raw checkpoints are much larger than the source and result tables.
+- No pretrained slide encoder or GatedSRP-specific pretraining is needed to run
+  the released protocols.
+- Reproduction from the manifests verifies the complete training path rather
+  than only checkpoint inference.
 
-## Optional External Weights
+For convenience inference, a future model hosting release can provide selected
+task checkpoints with their manifest row, dataset, feature key, seed, and model
+family. Until such a release is linked here, regenerate the desired `best.pt`
+from its manifest row.
 
-If fixed pretrained weights are released later, they should be hosted outside
-the source repository and accompanied by a manifest containing:
-
-- manifest row or `run_name`
-- dataset/cohort and seed
-- model family and feature key
-- checkpoint filename
-- SHA256 checksum
-
-The source repository should then link to that external model repository rather
-than storing binary weights directly in Git.
+H5 embeddings are also too large for the source repository. They can be
+generated with AtlasPatch using [EMBEDDINGS.md](EMBEDDINGS.md) or distributed as
+a separate data artifact.

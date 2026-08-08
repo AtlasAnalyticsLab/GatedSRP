@@ -1,0 +1,13 @@
+dataset	parameterization	formula	primary_metric	mean	std	runs
+KIRP	selected_fixed_range	beta=delta*tanh(g)	case_c_index	0.764773	0.080477	5
+KIRP	direct_bounded_beta	beta=2*tanh(g/2)	case_c_index	0.758159	0.058285	5
+LUAD	selected_fixed_range	beta=delta*tanh(g)	case_c_index	0.583213	0.049196	5
+LUAD	direct_bounded_beta	beta=2*tanh(g/2)	case_c_index	0.561941	0.053762	5
+STAD	selected_fixed_range	beta=delta*tanh(g)	case_c_index	0.617059	0.054182	5
+STAD	direct_bounded_beta	beta=2*tanh(g/2)	case_c_index	0.573178	0.062541	5
+KGH	selected_fixed_range	beta=delta*tanh(g)	f1	0.854378	0.033607	5
+KGH	direct_bounded_beta	beta=2*tanh(g/2)	f1	0.840718	0.034172	5
+PANDA	selected_fixed_range	beta=delta*tanh(g)	kappa_quad	0.884192	0.005749	5
+PANDA	direct_bounded_beta	beta=2*tanh(g/2)	kappa_quad	0.886994	0.006212	5
+BRACS	selected_fixed_range	beta=delta*tanh(g)	f1	0.442415	0.087667	5
+BRACS	direct_bounded_beta	beta=2*tanh(g/2)	f1	0.423864	0.073554	5

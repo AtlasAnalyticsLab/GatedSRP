@@ -285,7 +285,7 @@ def extract_layerscale_values(model: torch.nn.Module) -> Dict[str, torch.Tensor]
     Snapshot CaiT-style LayerScale vectors from every SRPBlock.
 
     Returns an empty dict when LayerScale is disabled. Disabled runs register no
-    gamma parameters by design, so old checkpoints and queue-launched commands
+    gamma parameters by design, so existing checkpoints and manifest commands
     retain their historical parameter surface.
     """
     attn_rows = []

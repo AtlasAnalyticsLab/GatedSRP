@@ -1,17 +1,17 @@
-# Install a CUDA-matched PyTorch wheel first, for example:
-#   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-numpy
-pandas
-scipy
-scikit-learn
-h5py
-pillow
-tqdm
-wandb
-matplotlib
-seaborn
-statsmodels
-timm
-einops
-openslide-python
-pytest
+# Versions recorded from the environment used for the bundled result tables.
+# Install the matching PyTorch wheel first; see README.md for CUDA and CPU commands.
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.15.3
+scikit-learn==1.7.2
+h5py==3.16.0
+pillow==12.1.1
+tqdm==4.67.3
+wandb==0.26.1
+matplotlib==3.10.9
+seaborn==0.13.2
+statsmodels==0.14.6
+timm==1.0.26
+einops==0.8.2
+openslide-python==1.4.3
+pytest==9.0.3

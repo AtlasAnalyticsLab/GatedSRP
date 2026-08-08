@@ -57,8 +57,9 @@ from slide_level.src.data import (
 # grid is simply coords // PATCH_STRIDE_L0.
 PATCH_STRIDE_L0 = 512
 _NEIGHBOR_SHELLS = ("cumulative", "ring")
-_NEIGHBOR_SOURCES = ("real", "shuffled")
+_NEIGHBOR_SOURCES = ("real", "shuffled", "nearest_retained")
 _NEIGHBOR_WEIGHTING = ("uniform", "gaussian", "inverse_distance")
+_SUBSAMPLE_MODES = ("coord_uniform", "random_retained")
 
 
 def neighbor_radius_from_window(neighbor_window: int) -> int:
@@ -126,7 +127,7 @@ def _shuffle_neighbor_slots(
 
     The mask and valid-slot positions are left untouched, so a 5-neighbor
     edge patch still has exactly five neighbor slots and a corner still
-    has three. This is a locality-control ablation: model capacity and
+    has three. This is a locality-control variant: model capacity and
     count distribution remain fixed while spatial identity is broken.
     """
     n, _k = neighbor_index.shape
@@ -145,6 +146,121 @@ def _shuffle_neighbor_slots(
         picked = rng.choice(candidates, size=count, replace=replace)
         out[i, valid_slots] = picked.astype(np.int64)
     return out
+
+
+def random_retained_subsample_indices(
+    *,
+    slide_key: str,
+    n_items: int,
+    cap: int,
+    seed: int,
+) -> np.ndarray:
+    """Return a deterministic random subset shared by paired model arms.
+
+    ``SeedSequence`` combines the run seed and slide identifier without relying
+    on process-global RNG state. DataLoader worker count and traversal order
+    therefore cannot change which patches are retained.
+    """
+
+    if cap <= 0:
+        raise ValueError(f"subsample cap must be positive, got {cap}")
+    if n_items <= cap:
+        return np.arange(n_items, dtype=np.int64)
+    key_bytes = slide_key.encode("utf-8")
+    entropy = [int(seed), int(cap), int(n_items), len(key_bytes), *key_bytes]
+    rng = np.random.default_rng(np.random.SeedSequence(entropy))
+    keep = rng.choice(n_items, size=int(cap), replace=False)
+    # Preserve source row order after random selection. Neighborhoods are
+    # rebuilt from retained coordinates, so this affects ordering only.
+    return np.sort(keep.astype(np.int64, copy=False))
+
+
+def apply_subsample_mode(
+    features: np.ndarray,
+    coords: np.ndarray,
+    *,
+    cap: Optional[int],
+    mode: str = "coord_uniform",
+    seed: int = 0,
+    slide_key: str = "",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply coordinate-uniform or paired random retained-patch sampling."""
+
+    if mode not in _SUBSAMPLE_MODES:
+        raise ValueError(
+            f"subsample_mode must be one of {_SUBSAMPLE_MODES}, got {mode!r}"
+        )
+    if features.shape[0] != coords.shape[0]:
+        raise ValueError(
+            f"features and coords row counts differ: {features.shape[0]} vs {coords.shape[0]}"
+        )
+    if cap is None or features.shape[0] <= int(cap):
+        return features, coords
+    if mode == "coord_uniform":
+        return _deterministic_subsample(features, coords, int(cap))
+    keep = random_retained_subsample_indices(
+        slide_key=slide_key,
+        n_items=int(features.shape[0]),
+        cap=int(cap),
+        seed=int(seed),
+    )
+    return features[keep], coords[keep]
+
+
+def _nearest_retained_neighbor_graph(
+    coords: np.ndarray,
+    *,
+    k: int,
+    stride: int,
+    weighting: str,
+    weight_sigma: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build nearest-coordinate neighbors for a capped retained patch set."""
+
+    if weighting not in _NEIGHBOR_WEIGHTING:
+        raise ValueError(
+            f"neighbor weighting must be one of {_NEIGHBOR_WEIGHTING}, got {weighting!r}"
+        )
+    if weight_sigma <= 0.0:
+        raise ValueError(f"neighbor_weight_sigma must be positive, got {weight_sigma}")
+    n_tokens = int(coords.shape[0])
+    index = np.full((n_tokens, k), -1, dtype=np.int64)
+    mask = np.zeros((n_tokens, k), dtype=np.bool_)
+    weight = np.zeros((n_tokens, k), dtype=np.float32)
+    if n_tokens <= 1 or k <= 0:
+        return index, mask, weight
+    if n_tokens > 4096:
+        raise ValueError(
+            "neighbor_source='nearest_retained' is limited to capped bags "
+            f"with at most 4096 patches; got {n_tokens}"
+        )
+
+    xy = coords[:, :2].astype(np.float32) / float(max(int(stride), 1))
+    delta = xy[:, None, :] - xy[None, :, :]
+    distance_sq = np.sum(delta * delta, axis=-1, dtype=np.float32)
+    np.fill_diagonal(distance_sq, np.inf)
+    take = min(k, n_tokens - 1)
+    # argpartition avoids sorting every all-pairs row. Sort only the retained
+    # candidates so slot order remains deterministic by physical distance.
+    candidates = np.argpartition(distance_sq, kth=take - 1, axis=1)[:, :take]
+    candidate_distances = np.take_along_axis(distance_sq, candidates, axis=1)
+    order = np.argsort(candidate_distances, axis=1, kind="stable")
+    nearest = np.take_along_axis(candidates, order, axis=1)
+    nearest_distance_sq = np.take_along_axis(distance_sq, nearest, axis=1)
+    index[:, :take] = nearest
+    mask[:, :take] = True
+    if weighting == "uniform":
+        values = np.ones_like(nearest_distance_sq, dtype=np.float32)
+    elif weighting == "gaussian":
+        values = np.exp(
+            -nearest_distance_sq / (2.0 * float(weight_sigma) ** 2)
+        ).astype(np.float32)
+    else:
+        values = (1.0 / np.sqrt(np.maximum(nearest_distance_sq, 1e-12))).astype(
+            np.float32
+        )
+    weight[:, :take] = values
+    return index, mask, weight
 
 
 def build_neighbor_graph(
@@ -188,6 +304,16 @@ def build_neighbor_graph(
     if source not in _NEIGHBOR_SOURCES:
         raise ValueError(f"neighbor source must be one of {_NEIGHBOR_SOURCES}, got {source!r}")
     N = coords.shape[0]
+    offsets = neighbor_offsets(radius=radius, shell=shell)
+    K = len(offsets)
+    if source == "nearest_retained":
+        return _nearest_retained_neighbor_graph(
+            coords,
+            k=K,
+            stride=stride,
+            weighting=weighting,
+            weight_sigma=weight_sigma,
+        )
     grid = coords // stride                        # (N, 2) int
     # Dict lookup from (gx, gy) -> patch index. Keys are tuples of ints.
     coord_to_idx: Dict[tuple, int] = {}
@@ -201,8 +327,6 @@ def build_neighbor_graph(
         if key not in coord_to_idx:
             coord_to_idx[key] = i
 
-    offsets = neighbor_offsets(radius=radius, shell=shell)
-    K = len(offsets)
     neighbor_index = np.full((N, K), -1, dtype=np.int64)
     neighbor_mask = np.zeros((N, K), dtype=np.bool_)
     slot_weights = neighbor_distance_weights(
@@ -262,7 +386,7 @@ def compute_h_morph(
 
     Because UNI is used as a frozen extractor and never fine-tuned
     during fixed-beta training, h^morph is strictly slide-intrinsic —
-    identical across ablations, epochs, seeds, and optimization steps.
+    identical across variants, epochs, seeds, and optimization steps.
 
     Args:
       features       (N, D) float32 raw UNI features as read from h5.
@@ -317,6 +441,8 @@ class SRPSlideFeatureDataset(Dataset):
         neighbor_shuffle_seed: int = 0,
         neighbor_weighting: str = "uniform",
         neighbor_weight_sigma: float = 1.0,
+        subsample_mode: str = "coord_uniform",
+        subsample_seed: int = 0,
     ) -> None:
         self.records = list(records)
         self.subsample_cap = subsample_cap
@@ -326,6 +452,8 @@ class SRPSlideFeatureDataset(Dataset):
         self.neighbor_shuffle_seed = int(neighbor_shuffle_seed)
         self.neighbor_weighting = neighbor_weighting
         self.neighbor_weight_sigma = float(neighbor_weight_sigma)
+        self.subsample_mode = subsample_mode
+        self.subsample_seed = int(subsample_seed)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -340,8 +468,13 @@ class SRPSlideFeatureDataset(Dataset):
             coords = np.asarray(f["coords"][:], dtype=np.int64)      # (N, 2)
 
         if self.subsample_cap is not None and feats.shape[0] > self.subsample_cap:
-            feats, coords = _deterministic_subsample(
-                feats, coords, self.subsample_cap,
+            feats, coords = apply_subsample_mode(
+                feats,
+                coords,
+                cap=self.subsample_cap,
+                mode=self.subsample_mode,
+                seed=self.subsample_seed,
+                slide_key=f"{r.slide_id}|{r.patient_id}",
             )
 
         neighbor_index, neighbor_mask, neighbor_weight = build_neighbor_graph(
@@ -373,7 +506,7 @@ class SRPSlideFeatureDataset(Dataset):
 def srp_slide_collate(batch: List[Dict]) -> Dict:
     """
     Collate for SRP. batch_size=1 only (matches stage 2). Emits all
-    SRP-specific tensors unconditionally — non-gated ablations simply
+    SRP-specific tensors unconditionally — non-gated variants simply
     ignore h_morph in their forward path.
     """
     assert len(batch) == 1, (
@@ -415,6 +548,8 @@ def build_srp_loaders_for_fold(
     neighbor_shuffle_seed: int = 0,
     neighbor_weighting: str = "uniform",
     neighbor_weight_sigma: float = 1.0,
+    subsample_mode: str = "coord_uniform",
+    subsample_seed: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """
     Build (train, val, test) DataLoaders with SRP-extended samples.
@@ -432,6 +567,8 @@ def build_srp_loaders_for_fold(
         neighbor_shuffle_seed=neighbor_shuffle_seed,
         neighbor_weighting=neighbor_weighting,
         neighbor_weight_sigma=neighbor_weight_sigma,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
     val_ds = SRPSlideFeatureDataset(
         filter_records(records, fold.val_patients), subsample_cap=va_cap,
@@ -441,6 +578,8 @@ def build_srp_loaders_for_fold(
         neighbor_shuffle_seed=neighbor_shuffle_seed,
         neighbor_weighting=neighbor_weighting,
         neighbor_weight_sigma=neighbor_weight_sigma,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
     test_ds = SRPSlideFeatureDataset(
         filter_records(records, fold.test_patients), subsample_cap=te_cap,
@@ -450,6 +589,8 @@ def build_srp_loaders_for_fold(
         neighbor_shuffle_seed=neighbor_shuffle_seed,
         neighbor_weighting=neighbor_weighting,
         neighbor_weight_sigma=neighbor_weight_sigma,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
 
     train_loader = DataLoader(
@@ -479,6 +620,8 @@ __all__ = [
     "neighbor_offsets",
     "neighbor_distance_weights",
     "build_neighbor_graph",
+    "apply_subsample_mode",
+    "random_retained_subsample_indices",
     "build_neighbor_index",
     "compute_h_morph",
     "SRPSlideFeatureDataset",

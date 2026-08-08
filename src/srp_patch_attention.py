@@ -1,8 +1,8 @@
 """Patch-level Spatial Redundancy Projection attention.
 
-This module is used by the ADP raw-RGB ViT architecture ablation.  Unlike the
-slide-level implementation, patch-level ViT inputs have a static grid, so
-neighbor indices and masks can be registered once as buffers.
+This module is used by the ADP raw-RGB ViT attention-operator comparison.
+Unlike the slide-level implementation, patch-level ViT inputs have a static
+grid, so neighbor indices and masks can be registered once as buffers.
 """
 
 from __future__ import annotations
@@ -421,8 +421,8 @@ class PatchSRPAttention(nn.Module):
 
             r_hat_i = normalize(mean_{j in N(i)} stopgrad(stream_j))
 
-        This keeps the pre-attention arms faithful to the paper-derived
-        design: edit one stream before the attention product while the other
+        This keeps the pre-attention arms faithful to the evaluated design:
+        edit one stream before the attention product while the other
         Q/K/V streams stay untouched.
         """
         B, H, N_p, _D = stream_patch.shape

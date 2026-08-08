@@ -16,7 +16,7 @@ from slide_level_srp.src.diff_transformer import (  # noqa: E402
     NystromDifferentialAttention,
     lambda_init_fn,
 )
-from slide_level_srp.train import _ABLATIONS, _build_model, _model_forward  # noqa: E402
+from slide_level_srp.train import _VARIANTS, _build_model, _model_forward  # noqa: E402
 
 
 def test_diff_attention_forward_shape_and_finite_values():
@@ -78,10 +78,10 @@ def test_train_dispatch_builds_diff_backend_without_srp_tensors():
         layerscale_init = 0.0
         no_ppeg = False
 
-    spec = _ABLATIONS["diff_transformer"]
+    spec = _VARIANTS["diff_transformer"]
     assert spec["backend"] == "diff"
     model = _build_model(Args, spec["backend"], spec, torch.device("cpu"))
     batch = {"features": torch.randn(1, 17, 64)}
-    logits = _model_forward(model, batch, "diff", torch.device("cpu"), ablation_spec=spec)
+    logits = _model_forward(model, batch, "diff", torch.device("cpu"), variant_spec=spec)
     assert logits.shape == (1, 3)
     assert torch.isfinite(logits).all()

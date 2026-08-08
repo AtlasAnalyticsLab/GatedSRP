@@ -14,4 +14,5 @@ Raw WSIs are not included.
 
 KGH labels are not included because KGH is a private cohort. For local KGH
 runs, place the private raw slides under the class-folder layout documented in
-`docs/DATASETS.md`, or pass a private `KGH_LABEL_CSV` outside this repository.
+`docs/DATASETS.md`. The embedding launcher also accepts a private file outside
+this repository through `--label-csv` when explicit slide selection is needed.

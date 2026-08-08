@@ -19,7 +19,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from slide_level_srp.data_ext import build_neighbor_graph, compute_h_morph
+from slide_level_srp.data_ext import (
+    apply_subsample_mode,
+    build_neighbor_graph,
+    compute_h_morph,
+)
 
 
 TCGA_SURVIVAL_LABEL_CSV = os.environ.get(
@@ -77,7 +81,7 @@ def tcga_encoder_from_feature_key(feature_key: str = TCGA_FEATURE_KEY) -> str:
 
     Existing TCGA survival jobs use ``features/uni_v2`` and therefore keep the
     historical ``.../40x/uni_v2/20x_256/patches`` path. Encoder-selection
-    ablations use the same TCGA-to-Atlas layout with the encoder folder swapped
+    encoder comparisons use the same TCGA-to-Atlas layout with the folder swapped
     to ``medsiglip`` or ``vit_b_16``. Keeping the mapping in one helper avoids
     passing a second CLI flag that could drift from ``--feature_key``.
     """
@@ -504,6 +508,8 @@ class TCGASurvivalDataset(Dataset):
         neighbor_shuffle_seed: int = 0,
         neighbor_weighting: str = "uniform",
         neighbor_weight_sigma: float = 1.0,
+        subsample_mode: str = "coord_uniform",
+        subsample_seed: int = 0,
     ) -> None:
         self.records = list(records)
         self.bin_edges = np.asarray(bin_edges, dtype=np.float64)
@@ -516,6 +522,8 @@ class TCGASurvivalDataset(Dataset):
         self.neighbor_shuffle_seed = int(neighbor_shuffle_seed)
         self.neighbor_weighting = neighbor_weighting
         self.neighbor_weight_sigma = float(neighbor_weight_sigma)
+        self.subsample_mode = subsample_mode
+        self.subsample_seed = int(subsample_seed)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -546,14 +554,14 @@ class TCGASurvivalDataset(Dataset):
             raise ValueError(f"{record.h5_path}: empty TCGA feature bag")
 
         if self.subsample_cap is not None and feats.shape[0] > self.subsample_cap:
-            # Cap very long UCEC/KIRC slides deterministically by spatial order.
-            # This keeps folds reproducible and prevents heavy-tail slides from
-            # triggering OOM during paper-table sweeps.
-            order = np.lexsort((coords[:, 1], coords[:, 0]))
-            keep = np.linspace(0, feats.shape[0] - 1, num=self.subsample_cap, dtype=np.int64)
-            keep_idx = order[keep]
-            feats = feats[keep_idx]
-            coords = coords[keep_idx]
+            feats, coords = apply_subsample_mode(
+                feats,
+                coords,
+                cap=self.subsample_cap,
+                mode=self.subsample_mode,
+                seed=self.subsample_seed,
+                slide_key=f"{record.cohort}|{record.slide_id}|{record.case_id}",
+            )
 
         coords_2d = coords[:, :2].astype(np.int64)
         nbi, nbm, nbw = build_neighbor_graph(
@@ -629,6 +637,8 @@ def build_tcga_survival_loaders_for_fold(
     neighbor_shuffle_seed: int = 0,
     neighbor_weighting: str = "uniform",
     neighbor_weight_sigma: float = 1.0,
+    subsample_mode: str = "coord_uniform",
+    subsample_seed: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     eff_train_cap = train_cap if train_cap is not None else subsample_cap
     eff_val_cap = val_cap if val_cap is not None else subsample_cap
@@ -643,6 +653,8 @@ def build_tcga_survival_loaders_for_fold(
         neighbor_shuffle_seed=neighbor_shuffle_seed,
         neighbor_weighting=neighbor_weighting,
         neighbor_weight_sigma=neighbor_weight_sigma,
+        subsample_mode=subsample_mode,
+        subsample_seed=subsample_seed,
     )
     train_ds = TCGASurvivalDataset(
         filter_tcga_survival_records(records, fold.train_cases),

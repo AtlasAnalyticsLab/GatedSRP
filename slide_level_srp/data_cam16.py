@@ -189,7 +189,7 @@ def _deterministic_subsample_cam16(
     feats: np.ndarray, coords: np.ndarray, cap: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Subsample a slide that exceeds N_MAX_SAFETY. Deterministic by
-    feature-row checksum + cap; matches stage-2 semantics so a given
+    feature-row count + cap; matches the shared loader semantics so a given
     slide always yields the same subsampled rows."""
     if feats.shape[0] <= cap:
         return feats, coords

@@ -3,7 +3,7 @@ PANDA zero-patch H5 guardrail tests.
 
 The production PANDA extractor can leave an H5 present but empty. That
 case must be removed before fold construction; otherwise positional
-ablation jobs fail only when the DataLoader reaches the bad slide.
+variant jobs fail only when the DataLoader reaches the bad slide.
 """
 
 from __future__ import annotations
