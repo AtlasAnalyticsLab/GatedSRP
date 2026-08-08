@@ -30,8 +30,7 @@
         <a href="#method">Method</a>
         <a href="#evidence">Evidence</a>
         <a href="#behavior">Behavior</a>
-        <a href="#reproduce">Reproduce</a>
-        <a href="#integrate">Integrate</a>
+        <a href="#use">Use GatedSRP</a>
       </nav>
       <a class="header-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP">View code</a>
     </div>
@@ -40,13 +39,14 @@
   <main id="main">
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="hero-copy content-shell">
-        <p class="eyebrow"><a class="conference-link" href="https://bmvc2026.bmva.org/">BMVC 2026</a> | Whole-slide representation learning</p>
+        <p class="eyebrow"><a class="conference-link" href="https://bmvc2026.bmva.org/">Accepted at BMVC 2026</a></p>
         <h1 id="hero-title">GatedSRP</h1>
-        <p class="hero-lead">Learn when spatial redundancy should be removed, preserved, or reflected.</p>
-        <p class="hero-summary"><a class="conference-link" href="https://bmvc2026.bmva.org/">Accepted at BMVC 2026.</a> A lightweight signed correction for patch-token attention that adapts to local tissue context while leaving the backbone and task head intact.</p>
+        <p class="hero-lead">Gated Spatial Redundancy Projection for Pathology Transformer Attentions</p>
+        <p class="hero-summary">A lightweight signed correction that learns when local tissue redundancy should be removed, preserved, or reflected.</p>
+        <p class="hero-authors">Zhiyuan Yang · Jiahao Cheng · Vincent Quoc-Huy Trinh · Mahdi S. Hosseini</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="#method">Explore the method</a>
-          <a class="button button-secondary" href="https://github.com/AtlasAnalyticsLab/GatedSRP#install">Install and run</a>
+          <a class="button button-primary" href="#use">Use GatedSRP in your model</a>
+          <a class="button button-secondary" href="#method">See the method</a>
         </div>
       </div>
       <figure class="hero-figure content-shell">
@@ -310,110 +310,58 @@
       </div>
     </section>
 
-    <section class="section section-ink" id="reproduce" aria-labelledby="reproduce-title">
+    <section class="section section-ink" id="use" aria-labelledby="use-title">
       <div class="content-shell">
         <div class="section-heading split-heading">
           <div>
-            <p class="eyebrow">Reproduce</p>
-            <h2 id="reproduce-title">From raw slides to comparable metrics</h2>
+            <p class="eyebrow">Use GatedSRP</p>
+            <h2 id="use-title">Add one correction after patch attention</h2>
           </div>
-          <p>Paths are environment variables, so existing slide and embedding stores can stay where they are. Public labels, exact run matrices, and result collectors are included.</p>
+          <p>Keep your attention operator, positional encoding, special tokens, residual path, and task head. GatedSRP only transforms the patch-token attention update using a neighborhood graph derived from patch coordinates.</p>
         </div>
 
-        <ol class="pipeline">
-          <li><span>1</span><div><h3>Install</h3><p>Choose Conda, venv, or uv and install the CUDA build of PyTorch for your system.</p></div></li>
-          <li><span>2</span><div><h3>Prepare data</h3><p>Download the public slides or stage an existing collection, then point the path variables at it.</p></div></li>
-          <li><span>3</span><div><h3>Extract embeddings</h3><p>Run the AtlasPatch launcher to create coordinate-aligned UNI-v2 H5 files.</p></div></li>
-          <li><span>4</span><div><h3>Run and collect</h3><p>Select manifest rows, train five seeds, and compare the collected TSVs with the bundled values.</p></div></li>
-        </ol>
+        <div class="integration-layout">
+          <ol class="integration-steps">
+            <li><span>1</span><div><h3>Retain patch coordinates</h3><p>Build a fixed-grid or nearest-neighbor graph aligned with the patch-token order.</p></div></li>
+            <li><span>2</span><div><h3>Keep special tokens separate</h3><p>Apply the correction to patch updates only; CLS and other special tokens pass through unchanged.</p></div></li>
+            <li><span>3</span><div><h3>Correct before the residual</h3><p>Insert <code>PatchSRPCorrection</code> after attention and before adding the residual connection.</p></div></li>
+            <li><span>4</span><div><h3>Train normally</h3><p>The zero-initialized gate starts as an exact identity and learns with the rest of the model.</p></div></li>
+          </ol>
 
-        <div class="code-shell">
-          <div class="code-header">
-            <span>Quick start</span>
-            <button class="copy-button" type="button" data-copy-target="quick-start">Copy</button>
-          </div>
-          <pre id="quick-start"><code>conda env create -f environment.yml
-conda activate gatedsrp
-python -m pip install torch==2.6.0 torchvision==0.21.0 \
-  --index-url https://download.pytorch.org/whl/cu124
-python -m pip install -r requirements.txt
-
-cp configs/paths.example.env .env.local
-source .env.local
-
-python scripts/extract_atlaspatch_embeddings.py \
-  --dataset camelyon17 \
-  --input "$CAM17_RAW_ROOT" \
-  --output "$(dirname "$CAM17_UNIV2_ROOT")"
-
-python scripts/run_manifest.py configs/classification_tasks.tsv \
-  --where dataset=cam17 --where method=gated_post_attention \
-  --where seed=42</code></pre>
-        </div>
-
-        <div class="reproduce-links">
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/DATASETS.md"><strong>Dataset guide</strong><span>Downloads, licenses, and exact TCGA slide staging</span></a>
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/EMBEDDINGS.md"><strong>Embedding guide</strong><span>AtlasPatch commands and H5 schema</span></a>
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/REPRODUCING.md"><strong>Run matrix</strong><span>Task, backbone, component, and efficiency manifests</span></a>
-        </div>
-
-        <p class="access-note"><strong>Restricted cohort:</strong> KGH-compatible loaders and aggregate metrics are included, but its labels, slide identifiers, images, and embeddings are not distributed. All other listed datasets have public acquisition instructions.</p>
-      </div>
-    </section>
-
-    <section class="section" id="integrate" aria-labelledby="integrate-title">
-      <div class="content-shell integrate-grid">
-        <div class="section-heading">
-          <p class="eyebrow">Integrate</p>
-          <h2 id="integrate-title">Add one patch-token correction</h2>
-          <p>Insert GatedSRP after a patch-token attention update and before the residual path. CLS tokens, positional encoding, attention implementation, and task heads remain unchanged.</p>
-          <ul class="check-list">
-            <li>Works with variable-length bags and fixed patch grids</li>
-            <li>Supports streaming neighborhood means and chunked correction</li>
-            <li>Includes Nyström, dense MHSA, SPAN, and LongNet integrations</li>
-            <li>Starts as an exact identity through zero gate initialization</li>
-          </ul>
-          <a class="button button-secondary" href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/INTEGRATION.md">Read the integration contract</a>
-        </div>
-
-        <div class="code-shell code-shell-light">
-          <div class="code-header">
-            <span>Post-attention hook</span>
-            <button class="copy-button" type="button" data-copy-target="integration-code">Copy</button>
-          </div>
-          <pre id="integration-code"><code>from slide_level_srp.src.srp_correction import (
+          <div class="code-shell">
+            <div class="code-header">
+              <span>Minimal post-attention integration</span>
+              <button class="copy-button" type="button" data-copy-target="integration-code">Copy</button>
+            </div>
+            <pre id="integration-code"><code>from slide_level_srp.src.srp_correction import (
     PatchSRPCorrection,
 )
 
-self.srp = PatchSRPCorrection(
-    dim,
+self.gated_srp = PatchSRPCorrection(
+    dim=dim,
     hidden_dim=32,
     delta_scale=2.0,
     correction_chunk_size=8192,
 )
 
-update = self.attn(x)
-patch_update = self.srp(
-    update[:, 1:],
+update = self.attn(self.norm(x))
+special, patches = update[:, :1], update[:, 1:]
+patches = self.gated_srp(
+    patches,
     neighbor_index,
     neighbor_mask,
     neighbor_weight=neighbor_weight,
 )
-update = torch.cat(
-    [update[:, :1], patch_update], dim=1
-)
+update = torch.cat((special, patches), dim=1)
 return x + update</code></pre>
+          </div>
         </div>
-      </div>
-    </section>
 
-    <section class="closing-band">
-      <div class="content-shell closing-inner">
-        <div>
-          <p class="eyebrow">Explore the implementation</p>
-          <h2>Every result connects to a command, artifact contract, and reference value.</h2>
+        <div class="integration-links">
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/INTEGRATION.md"><strong>Integration guide</strong><span>Tensor contract, placement, neighborhood inputs, and validation checks</span></a>
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/ARCHITECTURES.md"><strong>Architecture examples</strong><span>Nyström attention, dense MHSA, SPAN, and LongNet adapters</span></a>
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/slide_level_srp/src/srp_correction.py"><strong>Core module</strong><span>Architecture-neutral PyTorch correction with chunked execution</span></a>
         </div>
-        <a class="button button-primary" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Open GatedSRP on GitHub</a>
       </div>
     </section>
   </main>

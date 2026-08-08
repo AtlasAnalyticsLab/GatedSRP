@@ -5,7 +5,6 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-pytest-2f6f3e)](tests)
 
 [Project website](https://atlasanalyticslab.github.io/GatedSRP/) ·
 [Method](docs/METHOD.md) ·
