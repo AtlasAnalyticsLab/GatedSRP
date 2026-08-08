@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://atlasanalyticslab.github.io/GatedSRP/sitemap.xml

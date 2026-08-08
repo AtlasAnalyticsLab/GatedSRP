@@ -1,5 +1,7 @@
-# GatedSRP: Local Redundancy-Aware Attention for Pathology Transformers
+# GatedSRP: Local Redundancy-Aware Attention for Pathology Transformers [BMVC 2026]
 
+[![BMVC 2026](https://img.shields.io/badge/BMVC-2026-7B1FA2)](https://bmvc2026.bmva.org/)
+[![Project Page](https://img.shields.io/badge/Project-Page-0e8a9c)](https://atlasanalyticslab.github.io/GatedSRP/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f)](LICENSE)
@@ -10,6 +12,14 @@
 [Use in another model](docs/INTEGRATION.md) ·
 [Reproduce results](docs/REPRODUCING.md) ·
 [Data and embeddings](docs/DATASETS.md)
+
+Code for:
+
+> **Gated Spatial Redundancy Projection for Pathology Transformer Attentions**
+>
+> Zhiyuan Yang, Jiahao Cheng, Vincent Quoc-Huy Trinh, Mahdi S. Hosseini
+>
+> Accepted at the British Machine Vision Conference (BMVC), 2026
 
 **Gated Spatial Redundancy Projection (GatedSRP)** is a lightweight correction
 for pathology transformers. It identifies the feature direction shared by a
@@ -275,7 +285,9 @@ The manifests train each task model and write `best.pt` locally. Shipping every
 seed checkpoint in Git would be unnecessarily large; the policy and artifact
 locations are described in [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
 
-Citation metadata will be added when publication details are available.
+GatedSRP was accepted at the British Machine Vision Conference (BMVC) 2026.
+Proceedings citation metadata will be added when the official publication
+details are available.
 
 ## License
 
