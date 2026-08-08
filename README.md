@@ -8,5 +8,13 @@ python -m http.server 8765
 ```
 
 Then open `http://localhost:8765/website/`. No build step or external runtime
-dependency is required. For GitHub Pages, publish the `website/` directory as
-the site root while keeping its `static/` paths unchanged.
+dependency is required.
+
+The source stays under `website/` on `main`. The deployed site is the root of
+the separate `gh-pages` branch, so that branch contains only deployable site
+files rather than training code, command manifests, or dataset labels. Publish
+later website updates from a clean `main` checkout:
+
+```bash
+git subtree push --prefix website origin gh-pages
+```

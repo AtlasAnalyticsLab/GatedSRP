@@ -181,6 +181,18 @@ a {
   grid-column: 1 / -1;
 }
 
+.conference-link {
+  color: var(--red);
+  font-weight: 800;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.conference-link:hover {
+  color: #923037;
+}
+
 h1,
 h2,
 h3,
