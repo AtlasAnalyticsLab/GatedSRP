@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="GatedSRP learns when local spatial redundancy in whole-slide transformers should be removed, preserved, or reflected.">
+  <meta name="theme-color" content="#f7f8f6">
+  <title>GatedSRP | Adaptive spatial redundancy control</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <link rel="stylesheet" href="static/css/index.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="nav-shell">
+      <a class="wordmark" href="#top" aria-label="GatedSRP home">
+        <span class="wordmark-mark" aria-hidden="true">G</span>
+        <span>GatedSRP</span>
+      </a>
+      <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="#method">Method</a>
+        <a href="#evidence">Evidence</a>
+        <a href="#behavior">Behavior</a>
+        <a href="#reproduce">Reproduce</a>
+        <a href="#integrate">Integrate</a>
+      </nav>
+      <a class="header-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP">View code</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy content-shell">
+        <p class="eyebrow">Whole-slide representation learning</p>
+        <h1 id="hero-title">GatedSRP</h1>
+        <p class="hero-lead">Learn when spatial redundancy should be removed, preserved, or reflected.</p>
+        <p class="hero-summary">A lightweight signed correction for patch-token attention that adapts to local tissue context while leaving the backbone and task head intact.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#method">Explore the method</a>
+          <a class="button button-secondary" href="https://github.com/AtlasAnalyticsLab/GatedSRP#install">Install and run</a>
+        </div>
+      </div>
+      <figure class="hero-figure content-shell">
+        <img src="static/images/gatedsrp_overview.png" width="2046" height="992" alt="GatedSRP pipeline from spatial patch neighborhoods through signed gated redundancy projection and slide-level prediction">
+      </figure>
+    </section>
+
+    <section class="signal-band" aria-label="Summary evidence">
+      <div class="metric-strip content-shell">
+        <div class="metric">
+          <strong>5 / 5</strong>
+          <span>TCGA cohorts improved in survival C-index</span>
+        </div>
+        <div class="metric">
+          <strong>+0.0269</strong>
+          <span>mean paired survival gain across cohorts</span>
+        </div>
+        <div class="metric">
+          <strong>12 / 16</strong>
+          <span>classification metrics improved over baseline</span>
+        </div>
+        <div class="metric">
+          <strong>+0.004–0.034%</strong>
+          <span>parameter increase across evaluated models</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="method" aria-labelledby="method-title">
+      <div class="content-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Mechanism</p>
+          <h2 id="method-title">Redundancy is local. Its treatment should be adaptive.</h2>
+          <p>Neighboring pathology patches can repeat morphology, but repetition is not uniformly harmful. GatedSRP estimates a local redundancy direction and learns a signed, token-specific correction after attention.</p>
+        </div>
+
+        <figure class="wide-figure">
+          <img src="static/images/local_redundancy.png" width="3702" height="955" loading="lazy" alt="Whole-slide examples showing spatially varying local redundancy across tissue regions">
+          <figcaption>Local feature similarity varies within and across slides, motivating a context-dependent intervention.</figcaption>
+        </figure>
+
+        <div class="method-grid">
+          <article class="method-step">
+            <span class="step-index">01</span>
+            <h3>Estimate</h3>
+            <p>Gather the valid 3x3 spatial neighbors of each patch and average their detached value vectors.</p>
+          </article>
+          <article class="method-step">
+            <span class="step-index">02</span>
+            <h3>Project</h3>
+            <p>Project the patch attention update onto the normalized local redundancy direction.</p>
+          </article>
+          <article class="method-step">
+            <span class="step-index">03</span>
+            <h3>Gate</h3>
+            <p>Predict a bounded signed coefficient from token and head diagnostics, initialized at identity.</p>
+          </article>
+        </div>
+
+        <div class="equation-band" aria-label="GatedSRP update equation">
+          <div>
+            <span class="equation-label">Local direction</span>
+            <code>r̂ᵢ = normalize(mean<sub>j∈N(i)</sub> vⱼ)</code>
+          </div>
+          <span class="equation-arrow" aria-hidden="true">→</span>
+          <div>
+            <span class="equation-label">Signed correction</span>
+            <code>zᵢ = yᵢ − βᵢ ⟨yᵢ, r̂ᵢ⟩ r̂ᵢ</code>
+          </div>
+          <span class="equation-arrow" aria-hidden="true">→</span>
+          <div>
+            <span class="equation-label">Bounded gate</span>
+            <code>βᵢ = δ tanh(gᵢ)</code>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-muted" id="evidence" aria-labelledby="evidence-title">
+      <div class="content-shell">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Evidence</p>
+            <h2 id="evidence-title">Results, including where gains do not transfer</h2>
+          </div>
+          <p>Every value below is backed by a checked-in aggregate table and a runnable five-seed manifest. Architecture compatibility is mixed and is presented as such.</p>
+        </div>
+
+        <div class="tabs" data-tabs>
+          <div class="tab-list" role="tablist" aria-label="Result views">
+            <button id="tab-survival" role="tab" aria-selected="true" aria-controls="panel-survival" tabindex="0">Survival</button>
+            <button id="tab-classification" role="tab" aria-selected="false" aria-controls="panel-classification" tabindex="-1">Classification</button>
+            <button id="tab-backbones" role="tab" aria-selected="false" aria-controls="panel-backbones" tabindex="-1">Slide backbones</button>
+            <button id="tab-mil" role="tab" aria-selected="false" aria-controls="panel-mil" tabindex="-1">MIL models</button>
+            <button id="tab-design" role="tab" aria-selected="false" aria-controls="panel-design" tabindex="-1">GatedSRP design</button>
+            <button id="tab-efficiency" role="tab" aria-selected="false" aria-controls="panel-efficiency" tabindex="-1">Efficiency</button>
+          </div>
+
+          <section id="panel-survival" class="tab-panel" role="tabpanel" aria-labelledby="tab-survival">
+            <div class="result-intro">
+              <h3>TCGA overall survival</h3>
+              <p>Case-level C-index, mean across five seeds. GatedSRP improves over the no-adaptation baseline on all five cohorts; the across-cohort paired estimate is +0.0269, 95% CI [0.0148, 0.0389], p = 0.0035.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Method</th><th>KIRC</th><th>KIRP</th><th>LUAD</th><th>STAD</th><th>UCEC</th></tr></thead>
+                <tbody>
+                  <tr><th>NA</th><td>0.7110</td><td>0.7247</td><td>0.5513</td><td>0.5910</td><td>0.6756</td></tr>
+                  <tr><th>XSA</th><td>0.7192</td><td>0.6795</td><td>0.5359</td><td>0.6035</td><td>0.6233</td></tr>
+                  <tr><th>Diff</th><td>0.7241</td><td>0.7020</td><td>0.5546</td><td>0.5847</td><td>0.6489</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td>0.7257</td><td>0.7648</td><td>0.5832</td><td>0.6171</td><td>0.6973</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="inline-findings">
+              <div><strong>Cohorts</strong><span>Positive mean change on all five TCGA datasets</span></div>
+              <div><strong>Paired estimate</strong><span>+0.0269 across cohort-level means</span></div>
+              <div><strong>Parameters</strong><span>At most 0.034% additional parameters</span></div>
+            </div>
+            <a class="text-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/results/README.md">Open all result tables</a>
+          </section>
+
+          <section id="panel-classification" class="tab-panel" role="tabpanel" aria-labelledby="tab-classification" hidden>
+            <div class="result-intro">
+              <h3>WSI classification</h3>
+              <p>Selected task metric, mean across five seeds. GatedSRP improves over the no-adaptation baseline on four of five datasets and on 12 of 16 reported classification metrics.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Method</th><th>CAM16 F1</th><th>CAM17 F1</th><th>KGH F1</th><th>PANDA kappa</th><th>BRACS F1</th></tr></thead>
+                <tbody>
+                  <tr><th>NA</th><td>.9731</td><td>.7836</td><td>.8297</td><td>.8822</td><td>.4179</td></tr>
+                  <tr><th>XSA</th><td>.9730</td><td>.7342</td><td>.8469</td><td>.8811</td><td>.4328</td></tr>
+                  <tr><th>Diff</th><td>.9923</td><td>.7578</td><td>.8471</td><td>.8826</td><td>.3874</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td>.9808</td><td>.7785</td><td>.8544</td><td>.8842</td><td>.4424</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="result-note">The selected metric improves over NA on four datasets; CAMELYON17 is the exception. Per-seed values and all task metrics are included in the repository.</p>
+          </section>
+
+          <section id="panel-backbones" class="tab-panel" role="tabpanel" aria-labelledby="tab-backbones" hidden>
+            <div class="result-intro">
+              <h3>Slide backbone compatibility</h3>
+              <p>Baseline to GatedSRP selected metric. These runs use official SPAN and Prov-GigaPath LongNet implementations plus dense MHSA, without pretrained slide checkpoints or architecture-specific gate tuning.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Architecture</th><th>KIRP</th><th>LUAD</th><th>STAD</th><th>PANDA</th><th>BRACS</th></tr></thead>
+                <tbody>
+                  <tr><th>SPAN</th><td class="positive">.7033 → .7454</td><td class="negative">.5702 → .5516</td><td class="positive">.5608 → .5730</td><td class="negative">.8722 → .8718</td><td class="negative">.4321 → .3949</td></tr>
+                  <tr><th>Prov-GigaPath LongNet</th><td class="negative">.6974 → .6612</td><td class="negative">.5680 → .5517</td><td class="positive">.5548 → .5614</td><td class="negative">.8800 → .8767</td><td class="negative">.4033 → .3840</td></tr>
+                  <tr><th>Dense MHSA</th><td class="negative">.7204 → .7199</td><td class="positive">.5537 → .5569</td><td class="positive">.5422 → .5592</td><td class="negative">.8767 → .8762</td><td class="positive">.4149 → .4276</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="result-note">The adapter is technically portable, but improvements are not universal across external backbones. This is compatibility evidence, not a claim of architecture-independent gain.</p>
+          </section>
+
+          <section id="panel-mil" class="tab-panel" role="tabpanel" aria-labelledby="tab-mil" hidden>
+            <div class="result-intro">
+              <h3>MIL survival models</h3>
+              <p>Case-level C-index across selected public TCGA cohorts.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Method</th><th>KIRP</th><th>LUAD</th><th>STAD</th><th>UCEC</th></tr></thead>
+                <tbody>
+                  <tr><th>ABMIL</th><td>.7224</td><td>.5553</td><td>.5905</td><td>.6529</td></tr>
+                  <tr><th>DSMIL</th><td>.7253</td><td>.5780</td><td>.5833</td><td>.6621</td></tr>
+                  <tr><th>Official TransMIL</th><td>.7318</td><td>.5422</td><td>.5856</td><td>.6460</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td>.7648</td><td>.5832</td><td>.6171</td><td>.6973</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="panel-design" class="tab-panel" role="tabpanel" aria-labelledby="tab-design" hidden>
+            <div class="two-column-results">
+              <div>
+                <div class="result-intro"><h3>Neighborhood size</h3><p>The 3x3 neighborhood is best on all six evaluated datasets.</p></div>
+                <div class="table-wrap compact-table">
+                  <table>
+                    <thead><tr><th>Dataset</th><th>3x3</th><th>5x5</th><th>7x7</th></tr></thead>
+                    <tbody>
+                      <tr><th>KIRP</th><td class="best">.7648</td><td>.7368</td><td>.7275</td></tr>
+                      <tr><th>LUAD</th><td class="best">.5832</td><td>.5633</td><td>.5763</td></tr>
+                      <tr><th>STAD</th><td class="best">.6171</td><td>.5861</td><td>.5694</td></tr>
+                      <tr><th>KGH</th><td class="best">.8544</td><td>.8429</td><td>.8312</td></tr>
+                      <tr><th>PANDA</th><td class="best">.8842</td><td>.8720</td><td>.8787</td></tr>
+                      <tr><th>BRACS</th><td class="best">.4424</td><td>.4209</td><td>.4210</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <div class="result-intro"><h3>Coefficient parameterization</h3><p>Fixed signed range versus direct soft-clipped β = 2 tanh(g/2).</p></div>
+                <div class="table-wrap compact-table">
+                  <table>
+                    <thead><tr><th>Dataset</th><th>Fixed</th><th>Direct β</th></tr></thead>
+                    <tbody>
+                      <tr><th>KIRP</th><td class="best">.7648</td><td>.7582</td></tr>
+                      <tr><th>LUAD</th><td class="best">.5832</td><td>.5619</td></tr>
+                      <tr><th>STAD</th><td class="best">.6171</td><td>.5732</td></tr>
+                      <tr><th>KGH</th><td class="best">.8544</td><td>.8407</td></tr>
+                      <tr><th>PANDA</th><td>.8842</td><td class="best">.8870</td></tr>
+                      <tr><th>BRACS</th><td class="best">.4424</td><td>.4239</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="panel-efficiency" class="tab-panel" role="tabpanel" aria-labelledby="tab-efficiency" hidden>
+            <div class="result-intro">
+              <h3>Resource profile</h3>
+              <p>Three-epoch paired profiles. Throughput is in whole slides per second and memory is peak reserved GPU GiB.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Method</th><th>PANDA memory</th><th>PANDA train</th><th>PANDA test</th><th>TCGA-5 mean memory</th><th>TCGA-5 mean train</th></tr></thead>
+                <tbody>
+                  <tr><th>NA</th><td>.47</td><td>11.806</td><td>46.588</td><td>1.80</td><td>1.910</td></tr>
+                  <tr><th>XSA</th><td>.52</td><td>12.081</td><td>53.365</td><td>1.92</td><td>1.903</td></tr>
+                  <tr><th>Diff</th><td>.57</td><td>7.680</td><td>33.493</td><td>2.08</td><td>1.896</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td>.49</td><td>9.790</td><td>32.962</td><td>4.69</td><td>1.925</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="result-note">The streaming correction limits PANDA memory, while variable-length TCGA bags produce a higher peak reserved-memory profile.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="behavior" aria-labelledby="behavior-title">
+      <div class="content-shell">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Learned behavior</p>
+            <h2 id="behavior-title">A signed gate, not a fixed suppression rule</h2>
+          </div>
+          <p>Most token-level means lie between zero and one, but the model can preserve the original update, apply weak negative correction, or move beyond full projection when the context supports it.</p>
+        </div>
+
+        <div class="figure-stack">
+          <figure class="wide-figure">
+            <img src="static/images/gate_coefficients.png" width="3209" height="772" loading="lazy" alt="Learned gate coefficient distributions across classification and survival datasets">
+            <figcaption>Learned coefficient distributions vary by dataset and slide rather than collapsing to one fixed value.</figcaption>
+          </figure>
+          <figure class="wide-figure figure-dark">
+            <img src="static/images/signed_gate_examples.png" width="1339" height="648" loading="lazy" alt="Examples of weak negative, identity-like, projection, and amplification coefficient regimes">
+            <figcaption>Representative signed-gate regimes. None of 410 evaluated checkpoint exports had a mean coefficient above 1.5.</figcaption>
+          </figure>
+          <figure class="wide-figure">
+            <img src="static/images/attention_heatmaps.png" width="3600" height="1405" loading="lazy" alt="Attention heatmaps comparing baseline and GatedSRP across pathology slides">
+            <figcaption>Attention remains slide-specific while the local correction changes how redundant evidence contributes to the representation.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-ink" id="reproduce" aria-labelledby="reproduce-title">
+      <div class="content-shell">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Reproduce</p>
+            <h2 id="reproduce-title">From raw slides to comparable metrics</h2>
+          </div>
+          <p>Paths are environment variables, so existing slide and embedding stores can stay where they are. Public labels, exact run matrices, and result collectors are included.</p>
+        </div>
+
+        <ol class="pipeline">
+          <li><span>1</span><div><h3>Install</h3><p>Choose Conda, venv, or uv and install the CUDA build of PyTorch for your system.</p></div></li>
+          <li><span>2</span><div><h3>Prepare data</h3><p>Download the public slides or stage an existing collection, then point the path variables at it.</p></div></li>
+          <li><span>3</span><div><h3>Extract embeddings</h3><p>Run the AtlasPatch launcher to create coordinate-aligned UNI-v2 H5 files.</p></div></li>
+          <li><span>4</span><div><h3>Run and collect</h3><p>Select manifest rows, train five seeds, and compare the collected TSVs with the bundled values.</p></div></li>
+        </ol>
+
+        <div class="code-shell">
+          <div class="code-header">
+            <span>Quick start</span>
+            <button class="copy-button" type="button" data-copy-target="quick-start">Copy</button>
+          </div>
+          <pre id="quick-start"><code>conda env create -f environment.yml
+conda activate gatedsrp
+python -m pip install torch==2.6.0 torchvision==0.21.0 \
+  --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -r requirements.txt
+
+cp configs/paths.example.env .env.local
+source .env.local
+
+python scripts/extract_atlaspatch_embeddings.py \
+  --dataset camelyon17 \
+  --input "$CAM17_RAW_ROOT" \
+  --output "$(dirname "$CAM17_UNIV2_ROOT")"
+
+python scripts/run_manifest.py configs/classification_tasks.tsv \
+  --where dataset=cam17 --where method=gated_post_attention \
+  --where seed=42</code></pre>
+        </div>
+
+        <div class="reproduce-links">
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/DATASETS.md"><strong>Dataset guide</strong><span>Downloads, licenses, and exact TCGA slide staging</span></a>
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/EMBEDDINGS.md"><strong>Embedding guide</strong><span>AtlasPatch commands and H5 schema</span></a>
+          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/REPRODUCING.md"><strong>Run matrix</strong><span>Task, backbone, component, and efficiency manifests</span></a>
+        </div>
+
+        <p class="access-note"><strong>Restricted cohort:</strong> KGH-compatible loaders and aggregate metrics are included, but its labels, slide identifiers, images, and embeddings are not distributed. All other listed datasets have public acquisition instructions.</p>
+      </div>
+    </section>
+
+    <section class="section" id="integrate" aria-labelledby="integrate-title">
+      <div class="content-shell integrate-grid">
+        <div class="section-heading">
+          <p class="eyebrow">Integrate</p>
+          <h2 id="integrate-title">Add one patch-token correction</h2>
+          <p>Insert GatedSRP after a patch-token attention update and before the residual path. CLS tokens, positional encoding, attention implementation, and task heads remain unchanged.</p>
+          <ul class="check-list">
+            <li>Works with variable-length bags and fixed patch grids</li>
+            <li>Supports streaming neighborhood means and chunked correction</li>
+            <li>Includes Nyström, dense MHSA, SPAN, and LongNet integrations</li>
+            <li>Starts as an exact identity through zero gate initialization</li>
+          </ul>
+          <a class="button button-secondary" href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/INTEGRATION.md">Read the integration contract</a>
+        </div>
+
+        <div class="code-shell code-shell-light">
+          <div class="code-header">
+            <span>Post-attention hook</span>
+            <button class="copy-button" type="button" data-copy-target="integration-code">Copy</button>
+          </div>
+          <pre id="integration-code"><code>from slide_level_srp.src.srp_correction import (
+    PatchSRPCorrection,
+)
+
+self.srp = PatchSRPCorrection(
+    dim,
+    hidden_dim=32,
+    delta_scale=2.0,
+    correction_chunk_size=8192,
+)
+
+update = self.attn(x)
+patch_update = self.srp(
+    update[:, 1:],
+    neighbor_index,
+    neighbor_mask,
+    neighbor_weight=neighbor_weight,
+)
+update = torch.cat(
+    [update[:, :1], patch_update], dim=1
+)
+return x + update</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing-band">
+      <div class="content-shell closing-inner">
+        <div>
+          <p class="eyebrow">Explore the implementation</p>
+          <h2>Every result connects to a command, artifact contract, and reference value.</h2>
+        </div>
+        <a class="button button-primary" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Open GatedSRP on GitHub</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="content-shell footer-inner">
+      <div><strong>GatedSRP</strong><span>Adaptive spatial redundancy control for whole-slide transformers.</span></div>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
+        <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/results">Results</a>
+        <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/docs">Documentation</a>
+      </nav>
+      <span>© <span data-year>2026</span> Atlas Analytics Lab</span>
+    </div>
+  </footer>
+
+  <script src="static/js/index.js" defer></script>
+</body>
+</html>
