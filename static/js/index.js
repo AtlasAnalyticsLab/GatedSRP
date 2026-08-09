@@ -3,6 +3,11 @@
   const siteNav = document.querySelector('.site-nav');
 
   if (menuButton && siteNav) {
+    const closeMenu = () => {
+      menuButton.setAttribute('aria-expanded', 'false');
+      siteNav.classList.remove('is-open');
+    };
+
     menuButton.addEventListener('click', () => {
       const open = menuButton.getAttribute('aria-expanded') === 'true';
       menuButton.setAttribute('aria-expanded', String(!open));
@@ -11,9 +16,24 @@
 
     siteNav.addEventListener('click', (event) => {
       if (event.target instanceof HTMLAnchorElement) {
-        menuButton.setAttribute('aria-expanded', 'false');
-        siteNav.classList.remove('is-open');
+        closeMenu();
       }
+    });
+
+    // Resizing or rotating a device can cross the navigation breakpoint. Reset
+    // the temporary menu state so it cannot reappear unexpectedly after a later
+    // orientation change.
+    let viewportWidth = window.innerWidth;
+    window.addEventListener('resize', () => {
+      if (window.innerWidth === viewportWidth) return;
+      viewportWidth = window.innerWidth;
+      closeMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || menuButton.getAttribute('aria-expanded') !== 'true') return;
+      closeMenu();
+      menuButton.focus();
     });
   }
 
