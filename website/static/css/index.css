@@ -21,6 +21,8 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 section[id] {
@@ -93,6 +95,7 @@ a {
   z-index: 100;
   border-bottom: 1px solid rgba(21, 32, 29, 0.12);
   background: rgba(247, 248, 246, 0.96);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
 
@@ -527,6 +530,8 @@ h1 {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--white);
   border: 1px solid #cbd3cf;
 }
@@ -629,6 +634,13 @@ tbody tr:last-child td {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 30px;
+}
+
+/* Compact tables keep an intrinsic width for readable cells. Constrain their
+   grid items so that width is handled by .table-wrap instead of widening the
+   surrounding heading and the page on narrow screens. */
+.two-column-results > div {
+  min-width: 0;
 }
 
 .two-column-results .result-intro {
@@ -901,6 +913,57 @@ code {
     gap: 30px;
   }
 
+  /* Keep every result view discoverable on touch devices instead of placing
+     the final tabs beyond a horizontal scroll boundary. */
+  .tab-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    overflow-x: visible;
+  }
+
+  .tab-list button {
+    width: 100%;
+    min-width: 0;
+    padding: 14px 12px;
+    border-bottom: 1px solid #c8d0cc;
+    white-space: normal;
+  }
+
+  .tab-list button[aria-selected="true"] {
+    border-bottom-color: #c8d0cc;
+    box-shadow: inset 0 -3px var(--teal);
+  }
+
+  /* Each design table needs enough width to expose every column without an
+     independent scroller on portrait tablets. */
+  .two-column-results {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+
+  .two-column-results .result-intro {
+    min-height: 0;
+  }
+
+  /* The desktop footer tracks become too narrow around tablet widths. A
+     vertical reading order keeps the description, links, and credit intact. */
+  .footer-inner {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .footer-inner > * {
+    min-width: 0;
+  }
+
+  .footer-inner nav {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+  }
+
   .equation-band {
     grid-template-columns: 1fr;
     gap: 14px;
@@ -909,7 +972,6 @@ code {
   .equation-arrow {
     transform: rotate(90deg);
   }
-
 }
 
 @media (max-width: 680px) {
@@ -973,7 +1035,7 @@ code {
   }
 
   .hero-figure {
-    width: calc(100% - 28px);
+    width: 100%;
     margin-top: 24px;
     padding: 12px 0 0;
   }
@@ -1037,7 +1099,11 @@ code {
   }
 
   .tab-list button {
-    padding-inline: 13px;
+    padding-inline: 10px;
+  }
+
+  .tab-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .result-intro {
@@ -1045,10 +1111,18 @@ code {
     gap: 8px;
   }
 
+  .compact-table table {
+    min-width: 100%;
+    font-size: 14px;
+  }
+
+  .compact-table th,
+  .compact-table td {
+    padding-inline: 6px;
+  }
+
   .inline-findings,
-  .two-column-results,
-  .integration-links,
-  .footer-inner {
+  .integration-links {
     grid-template-columns: 1fr;
   }
 
@@ -1060,14 +1134,6 @@ code {
 
   .inline-findings div + div {
     border-top: 1px solid #c8d0cc;
-  }
-
-  .two-column-results {
-    gap: 40px;
-  }
-
-  .two-column-results .result-intro {
-    min-height: 0;
   }
 
   .integration-steps li {
@@ -1088,10 +1154,38 @@ code {
   .integration-links a + a {
     border-top: 1px solid rgba(255, 255, 255, 0.2);
   }
+}
 
-  .footer-inner {
-    gap: 20px;
-    align-items: start;
+@media (max-width: 340px) {
+  /* Foldable cover screens and older 320px phones need a smaller type step;
+     fixed breakpoint sizes avoid unstable viewport-proportional scaling. */
+  h1 {
+    font-size: 42px;
+  }
+
+  .hero-lead {
+    font-size: 20px;
+  }
+
+  .hero-summary {
+    font-size: 15px;
+  }
+
+  .hero-actions,
+  .hero-actions .button {
+    width: 100%;
+  }
+
+  .section-heading h2 {
+    font-size: 30px;
+  }
+}
+
+@media (min-width: 1600px) and (min-height: 960px) {
+  /* High-resolution displays have enough vertical room to show the paper
+     overview at the full content width while retaining the evidence band. */
+  .hero-figure {
+    width: min(calc(100% - 40px), var(--max-width));
   }
 }
 
