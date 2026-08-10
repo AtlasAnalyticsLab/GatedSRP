@@ -22,17 +22,15 @@
   <header class="site-header">
     <div class="nav-shell">
       <a class="wordmark" href="#top" aria-label="GatedSRP home">
-        <span class="wordmark-mark" aria-hidden="true">G</span>
         <span>GatedSRP</span>
       </a>
-      <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
       <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
         <a href="#method">Method</a>
-        <a href="#evidence">Evidence</a>
+        <a href="#evidence">Results</a>
         <a href="#behavior">Behavior</a>
-        <a href="#use">Use GatedSRP</a>
+        <a href="#use">Integration</a>
       </nav>
-      <a class="header-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP">View code</a>
+      <a class="header-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
     </div>
   </header>
 
@@ -45,12 +43,15 @@
         <p class="hero-summary">A lightweight signed correction that learns when local tissue redundancy should be removed, preserved, or reflected.</p>
         <p class="hero-authors">Zhiyuan Yang · Jiahao Cheng · Vincent Quoc-Huy Trinh · Mahdi S. Hosseini</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="#use">Use GatedSRP in your model</a>
-          <a class="button button-secondary" href="#method">See the method</a>
+          <a class="button" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
+          <a class="button" href="#use">Use in your model</a>
+          <a class="button" href="#evidence">Results</a>
         </div>
       </div>
       <figure class="hero-figure content-shell">
-        <img src="static/images/gatedsrp_overview.png" width="2046" height="992" alt="GatedSRP pipeline from spatial patch neighborhoods through signed gated redundancy projection and slide-level prediction">
+        <a class="figure-link" href="static/images/gatedsrp_overview.png" target="_blank" rel="noopener" aria-label="Open the GatedSRP overview at full resolution">
+          <img src="static/images/gatedsrp_overview.png" width="2046" height="992" alt="GatedSRP pipeline from spatial patch neighborhoods through signed gated redundancy projection and slide-level prediction">
+        </a>
       </figure>
     </section>
 
@@ -78,13 +79,14 @@
     <section class="section" id="method" aria-labelledby="method-title">
       <div class="content-shell">
         <div class="section-heading">
-          <p class="eyebrow">Mechanism</p>
-          <h2 id="method-title">Redundancy is local. Its treatment should be adaptive.</h2>
+          <h2 id="method-title">How GatedSRP works</h2>
           <p>Neighboring pathology patches can repeat morphology, but repetition is not uniformly harmful. GatedSRP estimates a local redundancy direction and learns a signed, token-specific correction after attention.</p>
         </div>
 
         <figure class="wide-figure">
-          <img src="static/images/local_redundancy.png" width="3702" height="955" loading="lazy" alt="Whole-slide examples showing spatially varying local redundancy across tissue regions">
+          <a class="figure-link" href="static/images/local_redundancy.png" target="_blank" rel="noopener" aria-label="Open the local redundancy figure at full resolution">
+            <img src="static/images/local_redundancy.png" width="3702" height="955" loading="lazy" alt="Whole-slide examples showing spatially varying local redundancy across tissue regions">
+          </a>
           <figcaption>Local feature similarity varies within and across slides, motivating a context-dependent intervention.</figcaption>
         </figure>
 
@@ -127,11 +129,8 @@
 
     <section class="section section-muted" id="evidence" aria-labelledby="evidence-title">
       <div class="content-shell">
-        <div class="section-heading split-heading">
-          <div>
-            <p class="eyebrow">Evidence</p>
-            <h2 id="evidence-title">Results, including where gains do not transfer</h2>
-          </div>
+        <div class="section-heading">
+          <h2 id="evidence-title">Results</h2>
           <p>Every value below is backed by a checked-in aggregate table and a runnable five-seed manifest. Architecture compatibility is mixed and is presented as such.</p>
         </div>
 
@@ -285,38 +284,38 @@
 
     <section class="section" id="behavior" aria-labelledby="behavior-title">
       <div class="content-shell">
-        <div class="section-heading split-heading">
-          <div>
-            <p class="eyebrow">Learned behavior</p>
-            <h2 id="behavior-title">A signed gate, not a fixed suppression rule</h2>
-          </div>
+        <div class="section-heading">
+          <h2 id="behavior-title">Learned gate behavior</h2>
           <p>Most token-level means lie between zero and one, but the model can preserve the original update, apply weak negative correction, or move beyond full projection when the context supports it.</p>
         </div>
 
         <div class="figure-stack">
           <figure class="wide-figure">
-            <img src="static/images/gate_coefficients.png" width="3209" height="772" loading="lazy" alt="Learned gate coefficient distributions across classification and survival datasets">
+            <a class="figure-link" href="static/images/gate_coefficients.png" target="_blank" rel="noopener" aria-label="Open the gate coefficient distributions at full resolution">
+              <img src="static/images/gate_coefficients.png" width="3209" height="772" loading="lazy" alt="Learned gate coefficient distributions across classification and survival datasets">
+            </a>
             <figcaption>Learned coefficient distributions vary by dataset and slide rather than collapsing to one fixed value.</figcaption>
           </figure>
           <figure class="wide-figure figure-dark">
-            <img src="static/images/signed_gate_examples.png" width="1339" height="648" loading="lazy" alt="Examples of weak negative, identity-like, projection, and amplification coefficient regimes">
+            <a class="figure-link" href="static/images/signed_gate_examples.png" target="_blank" rel="noopener" aria-label="Open the signed gate examples at full resolution">
+              <img src="static/images/signed_gate_examples.png" width="1339" height="648" loading="lazy" alt="Examples of weak negative, identity-like, projection, and amplification coefficient regimes">
+            </a>
             <figcaption>Representative signed-gate regimes. None of 410 evaluated checkpoint exports had a mean coefficient above 1.5.</figcaption>
           </figure>
           <figure class="wide-figure">
-            <img src="static/images/attention_heatmaps.png" width="3600" height="1405" loading="lazy" alt="Attention heatmaps comparing baseline and GatedSRP across pathology slides">
+            <a class="figure-link" href="static/images/attention_heatmaps.png" target="_blank" rel="noopener" aria-label="Open the attention heatmaps at full resolution">
+              <img src="static/images/attention_heatmaps.png" width="3600" height="1405" loading="lazy" alt="Attention heatmaps comparing baseline and GatedSRP across pathology slides">
+            </a>
             <figcaption>Attention remains slide-specific while the local correction changes how redundant evidence contributes to the representation.</figcaption>
           </figure>
         </div>
       </div>
     </section>
 
-    <section class="section section-ink" id="use" aria-labelledby="use-title">
+    <section class="section section-muted" id="use" aria-labelledby="use-title">
       <div class="content-shell">
-        <div class="section-heading split-heading">
-          <div>
-            <p class="eyebrow">Use GatedSRP</p>
-            <h2 id="use-title">Add one correction after patch attention</h2>
-          </div>
+        <div class="section-heading">
+          <h2 id="use-title">Use GatedSRP in your model</h2>
           <p>Keep your attention operator, positional encoding, special tokens, residual path, and task head. GatedSRP only transforms the patch-token attention update using a neighborhood graph derived from patch coordinates.</p>
         </div>
 
@@ -368,9 +367,8 @@ return x + update</code></pre>
 
   <footer class="site-footer">
     <div class="content-shell footer-inner">
-      <div><strong>GatedSRP</strong><span>Adaptive spatial redundancy control for whole-slide transformers.</span></div>
+      <div><strong>GatedSRP</strong><span>BMVC 2026</span></div>
       <nav aria-label="Footer navigation">
-        <a href="https://bmvc2026.bmva.org/">BMVC 2026</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/results">Results</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/docs">Documentation</a>
