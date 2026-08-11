@@ -243,6 +243,18 @@ h1 {
   border-color: var(--accent-dark);
 }
 
+.button-secondary {
+  color: var(--ink);
+  background: var(--white);
+  border-color: var(--ink);
+}
+
+.button-secondary:hover {
+  color: var(--white);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
 .hero-highlights {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -267,6 +279,8 @@ h1 {
 .highlight-value,
 .highlight-label {
   display: block;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .highlight-value {
@@ -667,6 +681,20 @@ pre {
 
 code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.section-citation .section-heading {
+  margin-bottom: 24px;
+}
+
+.citation-shell {
+  max-width: 820px;
+  margin-inline: auto;
+}
+
+.citation-shell pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .usage-footer {

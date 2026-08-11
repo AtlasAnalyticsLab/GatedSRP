@@ -46,7 +46,8 @@
         <p class="hero-summary">A lightweight signed correction that adapts patch-token attention updates to their local tissue context.</p>
         <p class="hero-authors">Zhiyuan Yang · Jiahao Cheng · Vincent Quoc-Huy Trinh · Mahdi S. Hosseini</p>
         <div class="hero-actions">
-          <a class="button" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
+          <a class="button" href="https://arxiv.org/abs/2608.08374">Paper</a>
+          <a class="button button-secondary" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
         </div>
       </div>
 
@@ -56,16 +57,16 @@
           <span class="highlight-label">additional parameters</span>
         </div>
         <div class="highlight-item">
-          <span class="highlight-value">5 TCGA cohorts</span>
-          <span class="highlight-label">best mean survival C-index</span>
+          <span class="highlight-value">5/5 + 12/16</span>
+          <span class="highlight-label">highest mean survival C-index; classification metrics improved</span>
         </div>
         <div class="highlight-item">
-          <span class="highlight-value">12 / 16</span>
-          <span class="highlight-label">classification metrics improved</span>
+          <span class="highlight-value">WSI-aware</span>
+          <span class="highlight-label">targets local spatial redundancy in patch tokens</span>
         </div>
         <div class="highlight-item">
-          <span class="highlight-value">Signed</span>
-          <span class="highlight-label">token- and head-specific correction</span>
+          <span class="highlight-value">Drop-in</span>
+          <span class="highlight-label">keeps attention routing, classifier, and loss unchanged</span>
         </div>
       </div>
 
@@ -306,12 +307,36 @@ return x + update</code></pre>
         </div>
       </div>
     </section>
+
+    <section class="section section-citation" id="citation" aria-labelledby="citation-title">
+      <div class="content-shell">
+        <div class="section-heading">
+          <h2 id="citation-title">Citation</h2>
+        </div>
+        <div class="code-shell citation-shell">
+          <div class="code-header">
+            <span>BibTeX</span>
+            <button class="copy-button" type="button" data-copy-target="citation-bibtex">Copy</button>
+          </div>
+          <pre><code id="citation-bibtex">@misc{yang2026gated,
+  title={Gated Spatial Redundancy Projection for Pathology Transformer Attentions},
+  author={Yang, Zhiyuan and Cheng, Jiahao and Trinh, Vincent Quoc-Huy and Hosseini, Mahdi S.},
+  year={2026},
+  eprint={2608.08374},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2608.08374}
+}</code></pre>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
     <div class="content-shell footer-inner">
       <div><strong>GatedSRP</strong><span>BMVC 2026</span></div>
       <nav aria-label="Footer navigation">
+        <a href="https://arxiv.org/abs/2608.08374">Paper</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/results">Results</a>
         <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/docs">Documentation</a>
