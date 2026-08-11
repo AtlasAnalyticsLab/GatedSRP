@@ -246,29 +246,43 @@ h1 {
 .hero-highlights {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
   margin-top: 32px;
-  border-block: 1px solid var(--line);
 }
 
 .highlight-item {
   display: flex;
   min-width: 0;
+  min-height: 108px;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 16px 18px;
+  padding: 18px 16px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
   text-align: center;
 }
 
-.highlight-item + .highlight-item {
-  border-left: 1px solid var(--line);
+.highlight-value,
+.highlight-label {
+  display: block;
 }
 
-.highlight-item p {
-  margin: 0;
+.highlight-value {
   color: var(--ink);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.highlight-label {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .hero-figure {
@@ -711,14 +725,7 @@ code {
 @media (max-width: 900px) {
   .hero-highlights {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .highlight-item:nth-child(3) {
-    border-left: 0;
-  }
-
-  .highlight-item:nth-child(n + 3) {
-    border-top: 1px solid var(--line);
+    gap: 12px;
   }
 
   .tab-list {
@@ -879,23 +886,6 @@ code {
   .site-nav {
     gap-inline: 14px;
   }
-}
-
-@media (max-width: 360px) {
-  .hero-highlights {
-    grid-template-columns: 1fr;
-  }
-
-  .highlight-item,
-  .highlight-item + .highlight-item,
-  .highlight-item:nth-child(3) {
-    border-left: 0;
-  }
-
-  .highlight-item + .highlight-item {
-    border-top: 1px solid var(--line);
-  }
-
 }
 
 @media (prefers-reduced-motion: reduce) {
