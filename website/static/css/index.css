@@ -246,47 +246,29 @@ h1 {
 .hero-highlights {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 36px;
-  background: var(--accent-soft);
-  border-block: 1px solid #cfe3d6;
+  margin-top: 32px;
+  border-block: 1px solid var(--line);
 }
 
 .highlight-item {
+  display: flex;
   min-width: 0;
-  padding: 20px 18px;
-  text-align: left;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 18px;
+  text-align: center;
 }
 
 .highlight-item + .highlight-item {
-  border-left: 1px solid #cfe3d6;
+  border-left: 1px solid var(--line);
 }
 
-.highlight-item strong,
-.highlight-item span,
-.highlight-item small {
-  display: block;
-}
-
-.highlight-item strong {
-  color: var(--accent-dark);
-  font-size: 20px;
-  font-weight: 750;
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
-}
-
-.highlight-item span {
-  margin-top: 5px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-.highlight-item small {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
+.highlight-item p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .hero-figure {
@@ -761,7 +743,7 @@ code {
   }
 
   .highlight-item:nth-child(n + 3) {
-    border-top: 1px solid #cfe3d6;
+    border-top: 1px solid var(--line);
   }
 
   .tab-list {
@@ -941,7 +923,7 @@ code {
   }
 
   .highlight-item + .highlight-item {
-    border-top: 1px solid #cfe3d6;
+    border-top: 1px solid var(--line);
   }
 
 }
