@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="GatedSRP, accepted at BMVC 2026, learns when local spatial redundancy in whole-slide pathology transformers should be removed, preserved, or reflected.">
-  <meta name="theme-color" content="#f7f8f6">
+  <meta name="theme-color" content="#ffffff">
   <meta property="og:type" content="website">
   <meta property="og:title" content="GatedSRP | BMVC 2026">
   <meta property="og:description" content="Adaptive spatial redundancy control for pathology transformer attentions.">
@@ -28,7 +28,7 @@
         <a href="#method">Method</a>
         <a href="#evidence">Results</a>
         <a href="#behavior">Behavior</a>
-        <a href="#use">Integration</a>
+        <a href="#use">How to use</a>
       </nav>
       <a class="header-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
     </div>
@@ -37,17 +37,42 @@
   <main id="main">
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="hero-copy content-shell">
-        <p class="eyebrow"><a class="conference-link" href="https://bmvc2026.bmva.org/">Accepted at BMVC 2026</a></p>
+        <a class="venue-badge" href="https://bmvc2026.bmva.org/programme/accepted_papers/">
+          <span class="venue-name">BMVC 2026</span>
+          <span class="venue-status">Accepted paper</span>
+        </a>
         <h1 id="hero-title">GatedSRP</h1>
         <p class="hero-lead">Gated Spatial Redundancy Projection for Pathology Transformer Attentions</p>
-        <p class="hero-summary">A lightweight signed correction that learns when local tissue redundancy should be removed, preserved, or reflected.</p>
+        <p class="hero-summary">A lightweight signed correction that adapts patch-token attention updates to their local tissue context.</p>
         <p class="hero-authors">Zhiyuan Yang · Jiahao Cheng · Vincent Quoc-Huy Trinh · Mahdi S. Hosseini</p>
         <div class="hero-actions">
           <a class="button" href="https://github.com/AtlasAnalyticsLab/GatedSRP">Code</a>
-          <a class="button" href="#use">Use in your model</a>
-          <a class="button" href="#evidence">Results</a>
         </div>
       </div>
+
+      <div class="hero-highlights content-shell" aria-label="GatedSRP highlights">
+        <div class="highlight-item">
+          <strong>~0.02%</strong>
+          <span>additional parameters</span>
+          <small>A small gate, not a new prediction head.</small>
+        </div>
+        <div class="highlight-item">
+          <strong>5 TCGA cohorts</strong>
+          <span>best mean survival C-index</span>
+          <small>Among all compared attention variants.</small>
+        </div>
+        <div class="highlight-item">
+          <strong>12 / 16</strong>
+          <span>classification metrics improved</span>
+          <small>Relative to the base attention.</small>
+        </div>
+        <div class="highlight-item">
+          <strong>Signed + adaptive</strong>
+          <span>one decision per token and head</span>
+          <small>Suppress, preserve, or reinforce local context.</small>
+        </div>
+      </div>
+
       <figure class="hero-figure content-shell">
         <a class="figure-link" href="static/images/gatedsrp_overview.png" target="_blank" rel="noopener" aria-label="Open the GatedSRP overview at full resolution">
           <img src="static/images/gatedsrp_overview.png" width="2046" height="992" alt="GatedSRP pipeline from spatial patch neighborhoods through signed gated redundancy projection and slide-level prediction">
@@ -55,32 +80,11 @@
       </figure>
     </section>
 
-    <section class="signal-band" aria-label="Summary evidence">
-      <div class="metric-strip content-shell">
-        <div class="metric">
-          <strong>5 / 5</strong>
-          <span>TCGA cohorts improved in survival C-index</span>
-        </div>
-        <div class="metric">
-          <strong>+0.0269</strong>
-          <span>mean paired survival gain across cohorts</span>
-        </div>
-        <div class="metric">
-          <strong>12 / 16</strong>
-          <span>classification metrics improved over baseline</span>
-        </div>
-        <div class="metric">
-          <strong>+0.004–0.034%</strong>
-          <span>parameter increase across evaluated models</span>
-        </div>
-      </div>
-    </section>
-
     <section class="section" id="method" aria-labelledby="method-title">
       <div class="content-shell">
         <div class="section-heading">
           <h2 id="method-title">How GatedSRP works</h2>
-          <p>Neighboring pathology patches can repeat morphology, but repetition is not uniformly harmful. GatedSRP estimates a local redundancy direction and learns a signed, token-specific correction after attention.</p>
+          <p>Nearby WSI patches often repeat the same tissue pattern. GatedSRP separates that shared local component from the attention update, then learns whether it should be reduced, retained, or reinforced.</p>
         </div>
 
         <figure class="wide-figure">
@@ -90,48 +94,43 @@
           <figcaption>Local feature similarity varies within and across slides, motivating a context-dependent intervention.</figcaption>
         </figure>
 
-        <div class="method-grid">
-          <article class="method-step">
-            <span class="step-index">01</span>
-            <h3>Estimate</h3>
-            <p>Gather the valid 3x3 spatial neighbors of each patch and average their detached value vectors.</p>
+        <div class="method-explanation">
+          <article class="method-concept">
+            <p class="concept-label">Local spatial reference</p>
+            <h3>Measure what repeats nearby</h3>
+            <p>The detached value vectors from each valid 3x3 patch neighborhood are averaged and normalized into a local tissue-redundancy axis.</p>
+            <code>r̂ᵢ = normalize(mean<sub>j∈N(i)</sub> vⱼ)</code>
           </article>
-          <article class="method-step">
-            <span class="step-index">02</span>
-            <h3>Project</h3>
-            <p>Project the patch attention update onto the normalized local redundancy direction.</p>
-          </article>
-          <article class="method-step">
-            <span class="step-index">03</span>
-            <h3>Gate</h3>
-            <p>Predict a bounded signed coefficient from token and head diagnostics, initialized at identity.</p>
+          <article class="method-concept">
+            <p class="concept-label">Token- and head-specific decision</p>
+            <h3>Adapt the correction to context</h3>
+            <p>Local homogeneity, neighbor availability, and attention alignment drive a bounded signed gate. Zero initialization makes the first update identical to the original attention layer.</p>
+            <code>βᵢ = δ tanh(gᵢ)</code>
           </article>
         </div>
 
-        <div class="equation-band" aria-label="GatedSRP update equation">
+        <div class="core-update" aria-label="GatedSRP update equation">
           <div>
-            <span class="equation-label">Local direction</span>
-            <code>r̂ᵢ = normalize(mean<sub>j∈N(i)</sub> vⱼ)</code>
-          </div>
-          <span class="equation-arrow" aria-hidden="true">→</span>
-          <div>
-            <span class="equation-label">Signed correction</span>
+            <span>One geometric correction</span>
             <code>zᵢ = yᵢ − βᵢ ⟨yᵢ, r̂ᵢ⟩ r̂ᵢ</code>
           </div>
-          <span class="equation-arrow" aria-hidden="true">→</span>
-          <div>
-            <span class="equation-label">Bounded gate</span>
-            <code>βᵢ = δ tanh(gᵢ)</code>
-          </div>
+          <p>Only the neighborhood-aligned component changes. The remaining attention information, CLS token, output projection, residual path, and task head stay intact.</p>
+        </div>
+
+        <div class="gate-regimes" aria-label="Meaning of the signed gate coefficient">
+          <div class="gate-regime regime-reinforce"><span>β &lt; 0</span><strong>Reinforce</strong><small>Increase useful local context.</small></div>
+          <div class="gate-regime regime-identity"><span>β = 0</span><strong>Preserve</strong><small>Recover the original attention update.</small></div>
+          <div class="gate-regime regime-project"><span>0 &lt; β ≤ 1</span><strong>Reduce</strong><small>Partly or fully remove redundancy.</small></div>
+          <div class="gate-regime regime-reflect"><span>1 &lt; β ≤ 2</span><strong>Reflect</strong><small>Move beyond full projection.</small></div>
         </div>
       </div>
     </section>
 
-    <section class="section section-muted" id="evidence" aria-labelledby="evidence-title">
+    <section class="section section-results" id="evidence" aria-labelledby="evidence-title">
       <div class="content-shell">
         <div class="section-heading">
           <h2 id="evidence-title">Results</h2>
-          <p>Every value below is backed by a checked-in aggregate table and a runnable five-seed manifest. Architecture compatibility is mixed and is presented as such.</p>
+          <p>Five-seed evaluation across survival, classification, attention backbones, MIL models, design choices, and measured resource use.</p>
         </div>
 
         <div class="tabs" data-tabs>
@@ -149,14 +148,15 @@
               <h3>TCGA overall survival</h3>
               <p>Case-level C-index, mean across five seeds. GatedSRP improves over the no-adaptation baseline on all five cohorts; the across-cohort paired estimate is +0.0269, 95% CI [0.0148, 0.0389], p = 0.0035.</p>
             </div>
+            <p class="result-legend"><span class="legend-positive">Green</span> indicates an increase and <span class="legend-negative">red</span> a decrease relative to NA.</p>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Method</th><th>KIRC</th><th>KIRP</th><th>LUAD</th><th>STAD</th><th>UCEC</th></tr></thead>
                 <tbody>
                   <tr><th>NA</th><td>0.7110</td><td>0.7247</td><td>0.5513</td><td>0.5910</td><td>0.6756</td></tr>
-                  <tr><th>XSA</th><td>0.7192</td><td>0.6795</td><td>0.5359</td><td>0.6035</td><td>0.6233</td></tr>
-                  <tr><th>Diff</th><td>0.7241</td><td>0.7020</td><td>0.5546</td><td>0.5847</td><td>0.6489</td></tr>
-                  <tr class="highlight-row"><th>GatedSRP</th><td>0.7257</td><td>0.7648</td><td>0.5832</td><td>0.6171</td><td>0.6973</td></tr>
+                  <tr><th>XSA</th><td class="positive">0.7192</td><td class="negative">0.6795</td><td class="negative">0.5359</td><td class="positive">0.6035</td><td class="negative">0.6233</td></tr>
+                  <tr><th>Diff</th><td class="positive">0.7241</td><td class="negative">0.7020</td><td class="positive">0.5546</td><td class="negative">0.5847</td><td class="negative">0.6489</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td class="positive">0.7257</td><td class="positive">0.7648</td><td class="positive">0.5832</td><td class="positive">0.6171</td><td class="positive">0.6973</td></tr>
                 </tbody>
               </table>
             </div>
@@ -173,14 +173,15 @@
               <h3>WSI classification</h3>
               <p>Selected task metric, mean across five seeds. GatedSRP improves over the no-adaptation baseline on four of five datasets and on 12 of 16 reported classification metrics.</p>
             </div>
+            <p class="result-legend"><span class="legend-positive">Green</span> and <span class="legend-negative">red</span> follow the meaningful changes reported relative to NA in the paper.</p>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Method</th><th>CAM16 F1</th><th>CAM17 F1</th><th>KGH F1</th><th>PANDA kappa</th><th>BRACS F1</th></tr></thead>
                 <tbody>
                   <tr><th>NA</th><td>.9731</td><td>.7836</td><td>.8297</td><td>.8822</td><td>.4179</td></tr>
-                  <tr><th>XSA</th><td>.9730</td><td>.7342</td><td>.8469</td><td>.8811</td><td>.4328</td></tr>
-                  <tr><th>Diff</th><td>.9923</td><td>.7578</td><td>.8471</td><td>.8826</td><td>.3874</td></tr>
-                  <tr class="highlight-row"><th>GatedSRP</th><td>.9808</td><td>.7785</td><td>.8544</td><td>.8842</td><td>.4424</td></tr>
+                  <tr><th>XSA</th><td>.9730</td><td class="negative">.7342</td><td class="positive">.8469</td><td>.8811</td><td class="positive">.4328</td></tr>
+                  <tr><th>Diff</th><td class="positive">.9923</td><td class="negative">.7578</td><td class="positive">.8471</td><td>.8826</td><td class="negative">.3874</td></tr>
+                  <tr class="highlight-row"><th>GatedSRP</th><td class="positive">.9808</td><td>.7785</td><td class="positive">.8544</td><td>.8842</td><td class="positive">.4424</td></tr>
                 </tbody>
               </table>
             </div>
@@ -312,54 +313,51 @@
       </div>
     </section>
 
-    <section class="section section-muted" id="use" aria-labelledby="use-title">
+    <section class="section section-use" id="use" aria-labelledby="use-title">
       <div class="content-shell">
         <div class="section-heading">
-          <h2 id="use-title">Use GatedSRP in your model</h2>
-          <p>Keep your attention operator, positional encoding, special tokens, residual path, and task head. GatedSRP only transforms the patch-token attention update using a neighborhood graph derived from patch coordinates.</p>
+          <h2 id="use-title">How to use</h2>
+          <p>Add one correction between the patch-token attention update and the residual connection. The attention operator, positional encoding, CLS token, and task head can remain unchanged.</p>
         </div>
 
-        <div class="integration-layout">
-          <ol class="integration-steps">
-            <li><span>1</span><div><h3>Retain patch coordinates</h3><p>Build a fixed-grid or nearest-neighbor graph aligned with the patch-token order.</p></div></li>
-            <li><span>2</span><div><h3>Keep special tokens separate</h3><p>Apply the correction to patch updates only; CLS and other special tokens pass through unchanged.</p></div></li>
-            <li><span>3</span><div><h3>Correct before the residual</h3><p>Insert <code>PatchSRPCorrection</code> after attention and before adding the residual connection.</p></div></li>
-            <li><span>4</span><div><h3>Train normally</h3><p>The zero-initialized gate starts as an exact identity and learns with the rest of the model.</p></div></li>
-          </ol>
+        <div class="usage-layout">
+          <div class="usage-overview">
+            <h3>Your model needs three things</h3>
+            <ul class="usage-list">
+              <li><strong>Patch coordinates</strong><span>Build a 3x3 graph aligned with the patch-token order.</span></li>
+              <li><strong>Patch attention updates</strong><span>Correct patch tokens only; special tokens pass through unchanged.</span></li>
+              <li><strong>A pre-residual insertion point</strong><span>Apply GatedSRP after attention and train normally from its identity initialization.</span></li>
+            </ul>
+            <p class="usage-note"><strong>No task-specific rewrite.</strong> Existing losses, classifiers, and evaluation code remain in place.</p>
+          </div>
 
           <div class="code-shell">
             <div class="code-header">
-              <span>Minimal post-attention integration</span>
+              <span>Minimal integration</span>
               <button class="copy-button" type="button" data-copy-target="integration-code">Copy</button>
             </div>
-            <pre id="integration-code"><code>from slide_level_srp.src.srp_correction import (
-    PatchSRPCorrection,
-)
+            <pre id="integration-code"><code>import torch
+
+from slide_level_srp.src.srp_correction import PatchSRPCorrection
 
 self.gated_srp = PatchSRPCorrection(
-    dim=dim,
-    hidden_dim=32,
-    delta_scale=2.0,
-    correction_chunk_size=8192,
+    dim, hidden_dim=32, delta_scale=2.0,
 )
 
 update = self.attn(self.norm(x))
-special, patches = update[:, :1], update[:, 1:]
 patches = self.gated_srp(
-    patches,
+    update[:, 1:],
     neighbor_index,
     neighbor_mask,
-    neighbor_weight=neighbor_weight,
 )
-update = torch.cat((special, patches), dim=1)
+update = torch.cat((update[:, :1], patches), dim=1)
 return x + update</code></pre>
           </div>
         </div>
 
-        <div class="integration-links">
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/INTEGRATION.md"><strong>Integration guide</strong><span>Tensor contract, placement, neighborhood inputs, and validation checks</span></a>
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/ARCHITECTURES.md"><strong>Architecture examples</strong><span>Nyström attention, dense MHSA, SPAN, and LongNet adapters</span></a>
-          <a href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/slide_level_srp/src/srp_correction.py"><strong>Core module</strong><span>Architecture-neutral PyTorch correction with chunked execution</span></a>
+        <div class="usage-footer">
+          <p>When the attention implementation exposes per-head value vectors, use the direct operator path to match the paper formulation.</p>
+          <a class="text-link" href="https://github.com/AtlasAnalyticsLab/GatedSRP/blob/main/docs/INTEGRATION.md">Read the complete integration guide</a>
         </div>
       </div>
     </section>
