@@ -527,31 +527,6 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
-.inline-findings {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
-  margin: 20px 0;
-  padding: 14px 0;
-  border-block: 1px solid var(--line);
-}
-
-.inline-findings strong,
-.inline-findings span {
-  display: block;
-}
-
-.inline-findings strong {
-  font-size: 14px;
-}
-
-.inline-findings span {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 .text-link {
   color: var(--accent);
   font-size: 14px;
@@ -859,11 +834,6 @@ code {
   .compact-table th,
   .compact-table td {
     padding-inline: 6px;
-  }
-
-  .inline-findings {
-    grid-template-columns: 1fr;
-    gap: 12px;
   }
 
   .usage-footer {
