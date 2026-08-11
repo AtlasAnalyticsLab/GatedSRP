@@ -25,6 +25,16 @@ python scripts/validate_h5_embeddings.py \
   --expected-dim 1536
 ```
 
+For TCGA, validate the cohort-level `patches` directory that the survival
+loader resolves beneath `TCGA_FEATURE_ROOT`:
+
+```bash
+python scripts/validate_h5_embeddings.py \
+  --root "$TCGA_FEATURE_ROOT/A-TCGA-KIRP/40x/uni_v2/20x_256/patches" \
+  --feature-key features/uni_v2 \
+  --expected-dim 1536
+```
+
 ## Extraction Template
 
 Install the native OpenSlide library, then AtlasPatch in the environment used

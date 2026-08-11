@@ -17,6 +17,7 @@ conda env create -f environment.yml
 conda activate gatedsrp
 python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
 ```
 
 ### venv + pip
@@ -27,15 +28,18 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
 ```
 
 ### uv
 
 ```bash
+python -m pip install uv
 uv venv --python 3.10
 source .venv/bin/activate
 uv pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 uv pip install -r requirements.txt
+uv pip install --no-deps -e .
 ```
 
 For CPU tests, install the matching CPU wheel instead. Full WSI training is
@@ -161,6 +165,18 @@ python scripts/collect_task_results.py --public-only --strict
 
 This writes task summaries to `results/rerun/`.
 
+For a first one-row run, repeat the launch filters during collection. Filters
+are applied before `--strict` checks, so this validates exactly the selected
+artifact instead of requiring the full matrix:
+
+```bash
+python scripts/collect_task_results.py \
+  --where cohort=KIRP \
+  --where method=gated_post_attention \
+  --where seed=42 \
+  --public-only --strict
+```
+
 The generic collector accepts each typed comparison manifest and its output
 root:
 
@@ -235,6 +251,10 @@ Rows launched with `--profile_runtime` additionally write
 
 - Use the five global-seed holdouts encoded in each manifest.
 - Keep paired method arms on the same seed and split.
+- Keep the context implementation flags encoded in each command. Nyström
+  quality rows pin the reduction order used for their reference checkpoints;
+  the efficiency manifest pins the streamed, chunked implementation it
+  measures.
 - Do not cap native-length WSI task runs. The 1,024-patch cap belongs only to
   the explicit dense-retained-patch comparison.
 - Keep `features` and `coords` row-aligned when combining encoder outputs.

@@ -103,6 +103,16 @@ Use:
 Set the chunk size to `0` to disable token chunking. Unit tests compare stacked,
 streamed, and chunked outputs numerically.
 
+The Nyström GatedSRP rows backed by the bundled quality tables explicitly
+select `stacked` with chunking disabled because that is the execution order
+used to produce their per-seed reference metrics. The efficiency manifest
+explicitly selects `streaming_mean` with 32,768-token chunks because those are
+the settings used for its memory and throughput measurements. Both compute the
+same operator, but their floating-point reduction order can lead to different
+optimization trajectories, so the choice is pinned instead of relying on a
+code default. Architecture-specific adapters retain the implementation encoded
+by their own manifest and model class.
+
 ## Learned Regimes
 
 <p align="center">

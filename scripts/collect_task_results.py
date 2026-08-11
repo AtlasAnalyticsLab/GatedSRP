@@ -22,6 +22,23 @@ CLASSIFICATION_METRICS = {
 }
 
 
+def parse_key_value(text: str) -> tuple[str, str]:
+    """Parse the same ``column=value`` filters accepted by the launcher."""
+    if "=" not in text:
+        raise argparse.ArgumentTypeError(f"expected column=value, got {text!r}")
+    key, value = text.split("=", 1)
+    if not key or not value:
+        raise argparse.ArgumentTypeError(
+            f"expected non-empty column=value, got {text!r}"
+        )
+    return key, value
+
+
+def row_matches(row: dict[str, str], filters: list[tuple[str, str]]) -> bool:
+    """Select only rows that match every requested manifest field exactly."""
+    return all(row.get(key) == value for key, value in filters)
+
+
 def read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
@@ -60,10 +77,15 @@ def collect_classification(
     strict: bool,
     *,
     public_only: bool = False,
+    filters: list[tuple[str, str]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
     missing: list[str] = []
     for row in read_tsv(manifest):
+        # Apply filters before strict artifact checks so one selected launcher
+        # row can be validated without requiring the rest of the run matrix.
+        if not row_matches(row, filters or []):
+            continue
         if public_only and row.get("access", "public") != "public":
             continue
         artifact = out_root / row["run_name"] / "test_artifacts.npz"
@@ -111,10 +133,13 @@ def collect_survival(
     strict: bool,
     *,
     public_only: bool = False,
+    filters: list[tuple[str, str]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
     missing: list[str] = []
     for row in read_tsv(manifest):
+        if not row_matches(row, filters or []):
+            continue
         if public_only and row.get("access", "public") != "public":
             continue
         path = out_root / row["run_name"] / "metrics.json"
@@ -190,6 +215,16 @@ def main() -> None:
         action="store_true",
         help="Skip manifest rows marked access=restricted.",
     )
+    parser.add_argument(
+        "--where",
+        action="append",
+        type=parse_key_value,
+        default=[],
+        help=(
+            "Collect rows matching an exact manifest field, for example "
+            "--where cohort=KIRP. Repeat for multiple fields."
+        ),
+    )
     args = parser.parse_args()
 
     class_per, class_summary = collect_classification(
@@ -197,13 +232,19 @@ def main() -> None:
         args.classification_runs,
         args.strict,
         public_only=args.public_only,
+        filters=args.where,
     )
     surv_per, surv_summary = collect_survival(
         args.survival_manifest,
         args.survival_runs,
         args.strict,
         public_only=args.public_only,
+        filters=args.where,
     )
+    # A misspelled filter would otherwise produce empty TSV files while
+    # returning success. In strict mode, require at least one validated run.
+    if args.strict and not class_per and not surv_per:
+        raise SystemExit("no task runs matched the requested filters")
 
     class_fields = sorted({key for row in class_per for key in row})
     surv_fields = sorted({key for row in surv_per for key in row})

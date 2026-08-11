@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "gatedsrp"
 version = "0.1.0"
@@ -30,6 +34,11 @@ dependencies = [
 Homepage = "https://atlasanalyticslab.github.io/GatedSRP/"
 Repository = "https://github.com/AtlasAnalyticsLab/GatedSRP"
 Documentation = "https://github.com/AtlasAnalyticsLab/GatedSRP/tree/main/docs"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["slide_level_srp*", "slide_level*", "patch_level_adp*", "src*"]
+exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

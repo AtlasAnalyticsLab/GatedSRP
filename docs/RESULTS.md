@@ -99,8 +99,10 @@ Seed-level values are in
 [neighborhood_sizes_per_seed.tsv](../results/neighborhood_sizes_per_seed.tsv).
 
 The larger windows are exact but increase neighbor work and memory. The public
-implementation streams neighbor slots and chunks token corrections to keep
-native-length WSI execution practical.
+implementation can stream neighbor slots and chunk token corrections for
+memory-constrained new runs. The quality manifests retain the reduction order
+used by the bundled checkpoints; see [METHOD.md](METHOD.md#scaling-to-native-length-slides)
+before changing those flags in a reference reproduction.
 
 ## Coefficient Parameterization
 

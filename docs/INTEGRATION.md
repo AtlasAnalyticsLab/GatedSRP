@@ -118,9 +118,11 @@ class AttentionBlockWithGatedSRP(nn.Module):
 ```
 
 This compact adapter estimates the local direction in the exposed
-post-attention patch stream. When your attention implementation exposes its
-value stream, use the value vectors for the local direction as in Option 3;
-that matches the Nyström implementation directly.
+post-attention patch stream. Because it receives an already merged token
+update, its learned coefficient is token-specific rather than head-specific.
+When your attention implementation exposes per-head outputs and value vectors,
+use the value vectors for the local direction as in Option 3; that matches the
+Nyström implementation directly.
 
 ## Option 3: Implement the Operator Directly
 
@@ -177,9 +179,11 @@ The ADP trainer demonstrates this path on raw RGB patches.
 - Rebuild neighbor indices after subsampling. The dense experiment uses
   deterministic random retention followed by nearest retained-coordinate
   neighbors.
-- Treat the local direction as context for the correction. The default
-  implementation detaches this direction while preserving gradients through
-  `y` and the gate.
+- In the Nyström path, construct the local direction from detached per-head
+  value vectors, preserving gradients through `y` and the gate. The portable
+  `PatchSRPCorrection` adapter instead estimates the direction from the exposed
+  post-attention token stream and keeps gradients through that correction
+  geometry; this is the adapter used for the released SPAN and LongNet rows.
 - For a post-attention patch-only update, place the correction before a later
   CLS-mixing block. A patch write after the final CLS readout has no effect.
 - Keep the coefficient bounded. Use `fixed` for `delta*tanh(g)` or

@@ -27,7 +27,10 @@ from scripts.collect_comparison_results import (
     summarize_metrics,
     summarize_runtime,
 )
-from scripts.collect_task_results import collect_classification
+from scripts.collect_task_results import (
+    collect_classification,
+    main as collect_task_main,
+)
 from slide_level_srp.src.dense_srp_aggregator import DenseAttentionSRPAggregator
 from slide_level_srp.src.mil_baselines import (
     DSMILAggregator,
@@ -42,6 +45,12 @@ from slide_level_srp.src.srp_attention import (
     neighborhood_mean,
     streaming_neighborhood_mean,
 )
+
+
+def read_manifest_rows(path: Path) -> list[dict[str, str]]:
+    """Read a public command manifest without changing field values."""
+    with path.open(encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
 
 
 def _cyclic_neighbors(batch_size: int, n_tokens: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -131,6 +140,49 @@ def test_chunked_signed_correction_matches_stacked_forward() -> None:
             h_local=local_homogeneity,
         )
     assert torch.allclose(expected, actual, atol=2e-5, rtol=2e-5)
+
+
+@pytest.mark.parametrize(
+    "manifest_name",
+    [
+        "classification_tasks.tsv",
+        "survival_tasks.tsv",
+        "patch_encoders.tsv",
+        "component_variants.tsv",
+        "neighborhood_sizes.tsv",
+        "coefficient_parameterizations.tsv",
+    ],
+)
+def test_quality_manifests_pin_reported_context_arithmetic(
+    manifest_name: str,
+) -> None:
+    """Reported metrics must not drift when the implementation default changes."""
+    rows = read_manifest_rows(REPO_ROOT / "configs" / manifest_name)
+    srp_rows = [
+        row
+        for row in rows
+        if "--variant srp_" in row["command"] or "--mode srp_" in row["command"]
+    ]
+    assert srp_rows, f"{manifest_name} should contain at least one SRP row"
+    for row in srp_rows:
+        command = row["command"]
+        assert "--srp_context_impl stacked" in command, row["run_name"]
+        assert "--srp_correction_chunk_size 0" in command, row["run_name"]
+
+
+def test_efficiency_manifest_pins_streamed_chunked_context() -> None:
+    """The resource table must retain the optimized implementation it measured."""
+    rows = read_manifest_rows(REPO_ROOT / "configs" / "runtime_efficiency.tsv")
+    srp_rows = [
+        row
+        for row in rows
+        if "--variant srp_" in row["command"] or "--mode srp_" in row["command"]
+    ]
+    assert len(srp_rows) == 6
+    for row in srp_rows:
+        command = row["command"]
+        assert "--srp_context_impl streaming_mean" in command, row["run_name"]
+        assert "--srp_correction_chunk_size 32768" in command, row["run_name"]
 
 
 def test_random_retained_sampling_is_paired_and_seeded() -> None:
@@ -321,6 +373,111 @@ def test_strict_public_collection_skips_restricted_rows(tmp_path: Path) -> None:
     assert [row["run_name"] for row in per_run] == ["public_run"]
     assert len(summary) == 1
     assert summary[0]["dataset"] == "cam16"
+
+
+def test_task_collector_strictly_validates_one_filtered_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Launcher-style filters should support a strict one-run reproduction."""
+    classification_manifest = tmp_path / "classification.tsv"
+    classification_manifest.write_text(
+        "dataset\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
+        "cam16\tbaseline\tNA\t42\tcam16_s42\tpublic\tpython train.py\n",
+        encoding="utf-8",
+    )
+    survival_manifest = tmp_path / "survival.tsv"
+    survival_manifest.write_text(
+        "cohort\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
+        "KIRP\tgated_post_attention\tGated SRP\t42\tkirp_s42\tpublic\tpython train.py\n"
+        "KIRP\tgated_post_attention\tGated SRP\t43\tkirp_s43\tpublic\tpython train.py\n",
+        encoding="utf-8",
+    )
+    survival_run = tmp_path / "survival-runs" / "kirp_s42"
+    survival_run.mkdir(parents=True)
+    (survival_run / "metrics.json").write_text(
+        json.dumps({
+            "best_epoch": 2,
+            "val": {"case_c_index": 0.91},
+            "test": {
+                "case_c_index": 0.83,
+                "slide_c_index": 0.86,
+                "n_cases": 56,
+                "n_events": 9,
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "collected"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "collect_task_results.py",
+            "--classification-manifest",
+            str(classification_manifest),
+            "--survival-manifest",
+            str(survival_manifest),
+            "--classification-runs",
+            str(tmp_path / "classification-runs"),
+            "--survival-runs",
+            str(tmp_path / "survival-runs"),
+            "--out-dir",
+            str(out_dir),
+            "--where",
+            "cohort=KIRP",
+            "--where",
+            "method=gated_post_attention",
+            "--where",
+            "seed=42",
+            "--public-only",
+            "--strict",
+        ],
+    )
+    collect_task_main()
+
+    with (out_dir / "survival_per_seed.tsv").open(
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        collected = list(csv.DictReader(handle, delimiter="\t"))
+    assert [row["run_name"] for row in collected] == ["kirp_s42"]
+
+
+def test_task_collector_strict_filter_rejects_empty_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A misspelled strict filter must not look like a successful rerun."""
+    header = "dataset\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
+    classification_manifest = tmp_path / "classification.tsv"
+    classification_manifest.write_text(
+        header + "cam16\tbaseline\tNA\t42\tcam16_s42\tpublic\tpython train.py\n",
+        encoding="utf-8",
+    )
+    survival_manifest = tmp_path / "survival.tsv"
+    survival_manifest.write_text(
+        "cohort\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "collect_task_results.py",
+            "--classification-manifest",
+            str(classification_manifest),
+            "--survival-manifest",
+            str(survival_manifest),
+            "--where",
+            "dataset=does-not-exist",
+            "--strict",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="no task runs matched"):
+        collect_task_main()
 
 
 def test_comparison_metric_collection_preserves_all_numeric_metrics(

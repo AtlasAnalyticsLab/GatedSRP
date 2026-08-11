@@ -108,6 +108,7 @@ conda env create -f environment.yml
 conda activate gatedsrp
 python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
 ```
 
 ### venv + pip
@@ -118,15 +119,18 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
 ```
 
 ### uv
 
 ```bash
+python -m pip install uv
 uv venv --python 3.10
 source .venv/bin/activate
 uv pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 uv pip install -r requirements.txt
+uv pip install --no-deps -e .
 ```
 
 Run the CPU-compatible test suite after installation:
@@ -175,6 +179,15 @@ python scripts/run_manifest.py configs/classification_tasks.tsv \
 
 python scripts/run_manifest.py configs/classification_tasks.tsv \
   --where dataset=cam16 --where method=baseline --where seed=42
+```
+
+5. Strictly collect that same row and compare its TSV metrics with
+   [results/](results/):
+
+```bash
+python scripts/collect_task_results.py \
+  --where dataset=cam16 --where method=baseline --where seed=42 \
+  --public-only --strict
 ```
 
 TCGA is fully enumerated by the checked-in OS label table. The helper either
