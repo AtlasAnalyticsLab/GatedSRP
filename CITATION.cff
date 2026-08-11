@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+title: "Gated Spatial Redundancy Projection for Pathology Transformer Attentions"
+message: "If you use this software, please cite the paper below."
+type: software
+authors:
+  - family-names: Yang
+    given-names: Zhiyuan
+  - family-names: Cheng
+    given-names: Jiahao
+  - family-names: Trinh
+    given-names: Vincent Quoc-Huy
+  - family-names: Hosseini
+    given-names: Mahdi S.
+repository-code: "https://github.com/AtlasAnalyticsLab/GatedSRP"
+url: "https://atlasanalyticslab.github.io/GatedSRP/"
+license: CC-BY-NC-SA-4.0
+version: 0.1.0
+date-released: 2026-08-11
+keywords:
+  - computational pathology
+  - digital pathology
+  - whole-slide image
+  - transformer attention
+  - spatial redundancy
+  - survival analysis
+  - slide classification
+preferred-citation:
+  type: conference-paper
+  title: "Gated Spatial Redundancy Projection for Pathology Transformer Attentions"
+  authors:
+    - family-names: Yang
+      given-names: Zhiyuan
+    - family-names: Cheng
+      given-names: Jiahao
+    - family-names: Trinh
+      given-names: Vincent Quoc-Huy
+    - family-names: Hosseini
+      given-names: Mahdi S.
+  collection-title: "British Machine Vision Conference (BMVC)"
+  year: 2026
+  url: "https://arxiv.org/abs/2608.08374"

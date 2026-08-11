@@ -34,6 +34,3 @@ wandb/
 
 # Optional architecture checkouts are installed locally.
 external/
-
-# Add public citation metadata after publication.
-CITATION.cff

@@ -1,12 +1,13 @@
-# GatedSRP: Local Redundancy-Aware Attention for Pathology Transformers [BMVC 2026]
+# Gated Spatial Redundancy Projection for Pathology Transformer Attentions [BMVC 2026]
 
-[![BMVC 2026](https://img.shields.io/badge/BMVC-2026-7B1FA2)](https://bmvc2026.bmva.org/)
+[![BMVC 2026](https://img.shields.io/badge/BMVC-2026-7B1FA2)](https://bmvc2026.bmva.org/programme/accepted_papers/)
 [![Project Page](https://img.shields.io/badge/Project-Page-0e8a9c)](https://atlasanalyticslab.github.io/GatedSRP/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f)](LICENSE)
 
 [Project website](https://atlasanalyticslab.github.io/GatedSRP/) ·
+[Paper](https://arxiv.org/abs/2608.08374) ·
 [Method](docs/METHOD.md) ·
 [Use in another model](docs/INTEGRATION.md) ·
 [Reproduce results](docs/REPRODUCING.md) ·
@@ -277,16 +278,30 @@ SPAN, LongNet, and custom architectures, see
 | `results/` | Aggregate and per-seed reference tables. |
 | `website/` | Static project site suitable for GitHub Pages. |
 
-## Checkpoints and Citation
+## Checkpoints
 
 No pretrained slide checkpoint or GatedSRP-specific pretraining is required.
 The manifests train each task model and write `best.pt` locally. Shipping every
 seed checkpoint in Git would be unnecessarily large; the policy and artifact
 locations are described in [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
 
+## Citation
+
 GatedSRP was accepted at the British Machine Vision Conference (BMVC) 2026.
-Proceedings citation metadata will be added when the official publication
-details are available.
+Until the proceedings record is available, please cite the released arXiv
+paper:
+
+```bibtex
+@misc{yang2026gatedspatialredundancyprojection,
+      title={Gated Spatial Redundancy Projection for Pathology Transformer Attentions},
+      author={Zhiyuan Yang and Jiahao Cheng and Vincent Quoc-Huy Trinh and Mahdi S. Hosseini},
+      year={2026},
+      eprint={2608.08374},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2608.08374}
+}
+```
 
 ## License
 

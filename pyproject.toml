@@ -1,7 +1,7 @@
 [project]
 name = "gatedsrp"
 version = "0.1.0"
-description = "Adaptive spatial-redundancy control for whole-slide transformers."
+description = "Gated Spatial Redundancy Projection for Pathology Transformer Attentions."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
