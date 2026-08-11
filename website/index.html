@@ -43,7 +43,7 @@
         </a>
         <h1 id="hero-title">GatedSRP</h1>
         <p class="hero-lead">Gated Spatial Redundancy Projection for Pathology Transformer Attentions</p>
-        <p class="hero-summary">A lightweight signed correction that adapts patch-token attention updates to their local tissue context.</p>
+        <p class="hero-summary">A lightweight attention correction that adapts each patch-token update to the tissue context around it.</p>
         <p class="hero-authors">Zhiyuan Yang · Jiahao Cheng · Vincent Quoc-Huy Trinh · Mahdi S. Hosseini</p>
         <div class="hero-actions">
           <a class="button" href="https://arxiv.org/abs/2608.08374">Paper</a>
@@ -54,19 +54,11 @@
       <div class="hero-highlights content-shell" aria-label="GatedSRP highlights">
         <div class="highlight-item">
           <span class="highlight-value">~0.02%</span>
-          <span class="highlight-label">additional parameters</span>
+          <span class="highlight-label">additional trainable parameters</span>
         </div>
         <div class="highlight-item">
-          <span class="highlight-value">5/5 + 12/16</span>
-          <span class="highlight-label">highest mean survival C-index; classification metrics improved</span>
-        </div>
-        <div class="highlight-item">
-          <span class="highlight-value">WSI-aware</span>
-          <span class="highlight-label">targets local spatial redundancy in patch tokens</span>
-        </div>
-        <div class="highlight-item">
-          <span class="highlight-value">Drop-in</span>
-          <span class="highlight-label">keeps attention routing, classifier, and loss unchanged</span>
+          <span class="highlight-value">+0.0269</span>
+          <span class="highlight-label">mean C-index gain over base attention across five TCGA survival cohorts</span>
         </div>
       </div>
 

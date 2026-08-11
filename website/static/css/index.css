@@ -257,7 +257,8 @@ h1 {
 
 .hero-highlights {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 320px));
+  justify-content: center;
   gap: 16px;
   margin-top: 32px;
 }
@@ -265,7 +266,7 @@ h1 {
 .highlight-item {
   display: flex;
   min-width: 0;
-  min-height: 108px;
+  min-height: 116px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -751,11 +752,6 @@ code {
 }
 
 @media (max-width: 900px) {
-  .hero-highlights {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
   .tab-list {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -778,6 +774,19 @@ code {
 
   .two-column-results .result-intro {
     min-height: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-highlights {
+    grid-template-columns: minmax(0, 320px);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 320px) {
+  .highlight-item {
+    min-height: 136px;
   }
 }
 
