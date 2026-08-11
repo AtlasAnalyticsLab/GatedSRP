@@ -1,17 +1,19 @@
-# Gated Spatial Redundancy Projection for Pathology Transformer Attentions [BMVC 2026]
+<h1 align="center">Gated Spatial Redundancy Projection for Pathology Transformer Attentions [BMVC 2026]</h1>
 
-[![BMVC 2026](https://img.shields.io/badge/BMVC-2026-7B1FA2)](https://bmvc2026.bmva.org/programme/accepted_papers/)
-[![Project Page](https://img.shields.io/badge/Project-Page-0e8a9c)](https://atlasanalyticslab.github.io/GatedSRP/)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f)](LICENSE)
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10+"></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c" alt="PyTorch 2.6.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-1f6f5f" alt="CC BY-NC-SA 4.0 license"></a>
+</p>
 
-[Project website](https://atlasanalyticslab.github.io/GatedSRP/) ·
-[Paper](https://arxiv.org/abs/2608.08374) ·
-[Method](docs/METHOD.md) ·
-[Use in another model](docs/INTEGRATION.md) ·
-[Reproduce results](docs/REPRODUCING.md) ·
-[Data and embeddings](docs/DATASETS.md)
+<p align="center">
+  <a href="https://atlasanalyticslab.github.io/GatedSRP/">Project website</a> ·
+  <a href="https://arxiv.org/abs/2608.08374">Paper</a> ·
+  <a href="docs/METHOD.md">Method</a> ·
+  <a href="docs/INTEGRATION.md">Use in another model</a> ·
+  <a href="docs/REPRODUCING.md">Reproduce results</a> ·
+  <a href="docs/DATASETS.md">Data and embeddings</a>
+</p>
 
 Code for:
 
