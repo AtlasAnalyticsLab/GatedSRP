@@ -53,8 +53,8 @@ GraphBolt. It does not modify the installed DGL package.
 
 ```bash
 python scripts/run_manifest.py configs/slide_backbones.tsv \
-  --where dataset=KIRP --where architecture=SPAN \
-  --where variant=baseline --where seed=42 --dry-run
+  --dataset=KIRP --architecture=SPAN \
+  --variant=baseline --seed=42 --dry-run
 ```
 
 ## Prov-GigaPath LongNet
@@ -99,8 +99,8 @@ The expected values begin with `ready` for both `span` and `longnet`.
 
 ```bash
 python scripts/run_manifest.py configs/slide_backbones.tsv \
-  --where dataset=STAD --where architecture='Prov-GigaPath LongNet' \
-  --where variant=gated_srp --where seed=42 --dry-run
+  --dataset=STAD --architecture='Prov-GigaPath LongNet' \
+  --variant=gated_srp --seed=42 --dry-run
 ```
 
 ## Dense MHSA
@@ -113,8 +113,8 @@ rebuilt from nearest retained coordinates.
 
 ```bash
 python scripts/run_manifest.py configs/slide_backbones.tsv \
-  --where dataset=BRACS --where architecture='Dense MHSA' \
-  --where variant=gated_srp --where seed=42 --dry-run
+  --dataset=BRACS --architecture='Dense MHSA' \
+  --variant=gated_srp --seed=42 --dry-run
 ```
 
 ## Training Policy

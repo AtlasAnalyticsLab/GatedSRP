@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run public command manifests row-by-row.
+"""Run released command manifests row-by-row.
 
 The manifests in ``configs/`` keep every evaluation run as an explicit shell
-command.  This wrapper adds light filtering and fail-fast execution while
+command. This wrapper adds named row selection and fail-fast execution while
 leaving the actual trainer arguments visible and editable in the TSV.
 """
 
@@ -15,29 +15,67 @@ import subprocess
 from pathlib import Path
 
 
-def parse_key_value(text: str) -> tuple[str, str]:
-    """Parse ``column=value`` filters used to select manifest rows."""
-    if "=" not in text:
-        raise argparse.ArgumentTypeError(f"expected column=value, got {text!r}")
-    key, value = text.split("=", 1)
-    if not key or not value:
-        raise argparse.ArgumentTypeError(f"expected non-empty column=value, got {text!r}")
-    return key, value
+SELECTOR_FIELDS = (
+    "dataset",
+    "cohort",
+    "method",
+    "seed",
+    "experiment",
+    "task",
+    "architecture",
+    "variant",
+    "encoder",
+    "window",
+    "parameterization",
+    "arm",
+    "endpoint",
+    "method_label",
+    "delta_scale",
+    "gate_hidden_dim",
+    "profile_epochs",
+    "selection_status",
+    "run_name",
+)
 
 
-def row_matches(row: dict[str, str], filters: list[tuple[str, str]]) -> bool:
-    """Return True when all requested filters match this TSV row."""
-    for key, value in filters:
-        if row.get(key) != value:
-            return False
-    return True
+def non_empty_selector(value: str) -> str:
+    """Reject empty named selectors that would otherwise match nothing."""
+    if not value:
+        raise argparse.ArgumentTypeError("selector values cannot be empty")
+    return value
+
+
+def add_selector_arguments(parser: argparse.ArgumentParser) -> None:
+    """Expose manifest columns as conventional named command-line options."""
+    for field in SELECTOR_FIELDS:
+        option = f"--{field.replace('_', '-')}"
+        parser.add_argument(
+            option,
+            dest=field,
+            type=non_empty_selector,
+            metavar="VALUE",
+            help=f"Select rows whose {field} column exactly matches VALUE.",
+        )
+
+
+def selected_filters(args: argparse.Namespace) -> dict[str, str]:
+    """Return only named selectors that the caller supplied."""
+    return {
+        field: value
+        for field in SELECTOR_FIELDS
+        if (value := getattr(args, field)) is not None
+    }
+
+
+def row_matches(row: dict[str, str], filters: dict[str, str]) -> bool:
+    """Return True when all requested selectors match this TSV row."""
+    return all(row.get(field) == value for field, value in filters.items())
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path, help="TSV file with a command column.")
-    parser.add_argument("--where", action="append", type=parse_key_value, default=[],
-                        help="Filter rows by exact column match, e.g. --where dataset=cam16.")
+    add_selector_arguments(parser)
     parser.add_argument("--limit", type=int, default=None,
                         help="Run at most this many matching rows.")
     parser.add_argument("--dry-run", action="store_true",
@@ -49,13 +87,21 @@ def main() -> None:
     if not args.manifest.exists():
         raise SystemExit(f"manifest not found: {args.manifest}")
 
+    filters = selected_filters(args)
     rows: list[dict[str, str]] = []
     with args.manifest.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        if "command" not in (reader.fieldnames or []):
+        fieldnames = reader.fieldnames or []
+        if "command" not in fieldnames:
             raise SystemExit(f"{args.manifest} is missing a command column")
+        unavailable = sorted(set(filters).difference(fieldnames))
+        if unavailable:
+            options = ", ".join(f"--{field.replace('_', '-')}" for field in unavailable)
+            raise SystemExit(
+                f"{args.manifest} does not support selector(s): {options}"
+            )
         for row in reader:
-            if row_matches(row, args.where):
+            if row_matches(row, filters):
                 rows.append(row)
 
     if args.start_at is not None:
@@ -64,7 +110,7 @@ def main() -> None:
                 rows = rows[idx:]
                 break
         else:
-            raise SystemExit(f"--start-at run_name not found after filtering: {args.start_at}")
+            raise SystemExit(f"--start-at run_name not found after selection: {args.start_at}")
 
     if args.limit is not None:
         rows = rows[: args.limit]

@@ -20,10 +20,10 @@ artifacts are sufficient for the result collectors.
 
 ```bash
 python scripts/run_manifest.py configs/classification_tasks.tsv \
-  --where dataset=cam16 --where method=baseline --where seed=42
+  --dataset=cam16 --method=baseline --seed=42
 
 python scripts/run_manifest.py configs/survival_tasks.tsv \
-  --where cohort=KIRP --where method=gated_post_attention --where seed=42
+  --cohort=KIRP --method=gated_post_attention --seed=42
 ```
 
 The exact model, split, optimizer, feature key, and seed are visible in the

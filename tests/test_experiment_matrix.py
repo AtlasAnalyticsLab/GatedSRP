@@ -31,6 +31,7 @@ from scripts.collect_task_results import (
     collect_classification,
     main as collect_task_main,
 )
+from scripts.run_manifest import main as run_manifest_main
 from slide_level_srp.src.dense_srp_aggregator import DenseAttentionSRPAggregator
 from slide_level_srp.src.mil_baselines import (
     DSMILAggregator,
@@ -181,6 +182,60 @@ def test_manifests_exclude_access_policy_and_undistributed_kgh_rows() -> None:
         assert all(row.get("dataset", "").lower() != "kgh" for row in rows), (
             manifest.name
         )
+
+
+def test_run_manifest_selects_rows_with_named_options(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Dataset, method, and seed options should select one exact command row."""
+    manifest = tmp_path / "classification.tsv"
+    manifest.write_text(
+        "dataset\tmethod\tseed\trun_name\tcommand\n"
+        "cam16\tbaseline\t42\tcam16_s42\tpython train.py\n"
+        "bracs\tbaseline\t42\tbracs_s42\tpython train.py\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_manifest.py",
+            str(manifest),
+            "--dataset=cam16",
+            "--method=baseline",
+            "--seed=42",
+            "--dry-run",
+        ],
+    )
+
+    run_manifest_main()
+
+    output = capsys.readouterr().out
+    assert "[1/1] cam16_s42" in output
+    assert "bracs_s42" not in output
+
+
+def test_run_manifest_rejects_selector_missing_from_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A named selector typo at the schema level should fail explicitly."""
+    manifest = tmp_path / "classification.tsv"
+    manifest.write_text(
+        "dataset\tmethod\tseed\trun_name\tcommand\n"
+        "cam16\tbaseline\t42\tcam16_s42\tpython train.py\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_manifest.py", str(manifest), "--cohort=KIRP", "--dry-run"],
+    )
+
+    with pytest.raises(SystemExit, match="does not support selector.*--cohort"):
+        run_manifest_main()
 
 
 def test_efficiency_manifest_pins_streamed_chunked_context() -> None:
@@ -380,7 +435,7 @@ def test_strict_filtered_collection_ignores_unselected_rows(tmp_path: Path) -> N
         manifest,
         tmp_path / "runs",
         strict=True,
-        filters=[("dataset", "cam16")],
+        filters={"dataset": "cam16"},
     )
 
     assert [row["run_name"] for row in per_run] == ["cam16_run"]
@@ -392,7 +447,7 @@ def test_task_collector_strictly_validates_one_filtered_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Launcher-style filters should support a strict one-run reproduction."""
+    """Named selectors should support a strict one-run reproduction."""
     classification_manifest = tmp_path / "classification.tsv"
     classification_manifest.write_text(
         "dataset\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
@@ -438,12 +493,9 @@ def test_task_collector_strictly_validates_one_filtered_run(
             str(tmp_path / "survival-runs"),
             "--out-dir",
             str(out_dir),
-            "--where",
-            "cohort=KIRP",
-            "--where",
-            "method=gated_post_attention",
-            "--where",
-            "seed=42",
+            "--cohort=KIRP",
+            "--method=gated_post_attention",
+            "--seed=42",
             "--strict",
         ],
     )
@@ -457,11 +509,11 @@ def test_task_collector_strictly_validates_one_filtered_run(
     assert [row["run_name"] for row in collected] == ["kirp_s42"]
 
 
-def test_task_collector_strict_filter_rejects_empty_selection(
+def test_task_collector_strict_selector_rejects_empty_selection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A misspelled strict filter must not look like a successful rerun."""
+    """A misspelled strict selector must not look like a successful rerun."""
     header = "dataset\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
     classification_manifest = tmp_path / "classification.tsv"
     classification_manifest.write_text(
@@ -482,8 +534,7 @@ def test_task_collector_strict_filter_rejects_empty_selection(
             str(classification_manifest),
             "--survival-manifest",
             str(survival_manifest),
-            "--where",
-            "dataset=does-not-exist",
+            "--dataset=does-not-exist",
             "--strict",
         ],
     )

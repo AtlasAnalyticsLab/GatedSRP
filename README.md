@@ -175,10 +175,10 @@ python scripts/validate_h5_embeddings.py \
 
 ```bash
 python scripts/run_manifest.py configs/classification_tasks.tsv \
-  --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
+  --dataset=cam16 --method=baseline --seed=42 --dry-run
 
 python scripts/run_manifest.py configs/classification_tasks.tsv \
-  --where dataset=cam16 --where method=baseline --where seed=42
+  --dataset=cam16 --method=baseline --seed=42
 ```
 
 5. Strictly collect that same row and compare its TSV metrics with
@@ -186,7 +186,7 @@ python scripts/run_manifest.py configs/classification_tasks.tsv \
 
 ```bash
 python scripts/collect_task_results.py \
-  --where dataset=cam16 --where method=baseline --where seed=42 \
+  --dataset=cam16 --method=baseline --seed=42 \
   --strict
 ```
 

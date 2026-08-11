@@ -21,22 +21,40 @@ CLASSIFICATION_METRICS = {
     "bracs": ["f1", "acc", "auc"],
 }
 
+TASK_SELECTOR_FIELDS = (
+    "dataset",
+    "cohort",
+    "method",
+    "seed",
+    "experiment",
+    "endpoint",
+    "method_label",
+    "delta_scale",
+    "gate_hidden_dim",
+    "selection_status",
+    "run_name",
+)
 
-def parse_key_value(text: str) -> tuple[str, str]:
-    """Parse the same ``column=value`` filters accepted by the launcher."""
-    if "=" not in text:
-        raise argparse.ArgumentTypeError(f"expected column=value, got {text!r}")
-    key, value = text.split("=", 1)
-    if not key or not value:
-        raise argparse.ArgumentTypeError(
-            f"expected non-empty column=value, got {text!r}"
-        )
-    return key, value
+
+def non_empty_selector(value: str) -> str:
+    """Reject empty selectors before result collection starts."""
+    if not value:
+        raise argparse.ArgumentTypeError("selector values cannot be empty")
+    return value
 
 
-def row_matches(row: dict[str, str], filters: list[tuple[str, str]]) -> bool:
+def row_matches(row: dict[str, str], filters: dict[str, str]) -> bool:
     """Select only rows that match every requested manifest field exactly."""
-    return all(row.get(key) == value for key, value in filters)
+    return all(row.get(key) == value for key, value in filters.items())
+
+
+def selected_filters(args: argparse.Namespace) -> dict[str, str]:
+    """Build the shared task selector map from parsed named options."""
+    return {
+        field: value
+        for field in TASK_SELECTOR_FIELDS
+        if (value := getattr(args, field)) is not None
+    }
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:
@@ -76,14 +94,14 @@ def collect_classification(
     out_root: Path,
     strict: bool,
     *,
-    filters: list[tuple[str, str]] | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
     missing: list[str] = []
     for row in read_tsv(manifest):
-        # Apply filters before strict artifact checks so one selected launcher
+        # Apply selectors before strict artifact checks so one selected launcher
         # row can be validated without requiring the rest of the run matrix.
-        if not row_matches(row, filters or []):
+        if not row_matches(row, filters or {}):
             continue
         artifact = out_root / row["run_name"] / "test_artifacts.npz"
         if not artifact.exists():
@@ -129,12 +147,12 @@ def collect_survival(
     out_root: Path,
     strict: bool,
     *,
-    filters: list[tuple[str, str]] | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
     missing: list[str] = []
     for row in read_tsv(manifest):
-        if not row_matches(row, filters or []):
+        if not row_matches(row, filters or {}):
             continue
         path = out_root / row["run_name"] / "metrics.json"
         if not path.exists():
@@ -204,34 +222,33 @@ def main() -> None:
     )
     parser.add_argument("--out-dir", type=Path, default=Path("results/rerun"))
     parser.add_argument("--strict", action="store_true", help="Fail if any manifest artifact is missing.")
-    parser.add_argument(
-        "--where",
-        action="append",
-        type=parse_key_value,
-        default=[],
-        help=(
-            "Collect rows matching an exact manifest field, for example "
-            "--where cohort=KIRP. Repeat for multiple fields."
-        ),
-    )
+    for field in TASK_SELECTOR_FIELDS:
+        parser.add_argument(
+            f"--{field.replace('_', '-')}",
+            dest=field,
+            type=non_empty_selector,
+            metavar="VALUE",
+            help=f"Collect rows whose {field} column exactly matches VALUE.",
+        )
     args = parser.parse_args()
+    filters = selected_filters(args)
 
     class_per, class_summary = collect_classification(
         args.classification_manifest,
         args.classification_runs,
         args.strict,
-        filters=args.where,
+        filters=filters,
     )
     surv_per, surv_summary = collect_survival(
         args.survival_manifest,
         args.survival_runs,
         args.strict,
-        filters=args.where,
+        filters=filters,
     )
-    # A misspelled filter would otherwise produce empty TSV files while
+    # A misspelled selector value would otherwise produce empty TSV files while
     # returning success. In strict mode, require at least one validated run.
     if args.strict and not class_per and not surv_per:
-        raise SystemExit("no task runs matched the requested filters")
+        raise SystemExit("no task runs matched the requested selectors")
 
     class_fields = sorted({key for row in class_per for key in row})
     surv_fields = sorted({key for row in surv_per for key in row})

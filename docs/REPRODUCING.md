@@ -105,24 +105,24 @@ quality.
 
 ## 4. Dry-Run and Launch
 
-`run_manifest.py` accepts exact `column=value` filters. It prints the selected
-command before execution.
+`run_manifest.py` provides named exact-match selectors for the columns in each
+manifest. It prints every selected command before execution.
 
 ```bash
 # One classification row
 python scripts/run_manifest.py configs/classification_tasks.tsv \
-  --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
+  --dataset=cam16 --method=baseline --seed=42 --dry-run
 
 # One TCGA survival row
 python scripts/run_manifest.py configs/survival_tasks.tsv \
-  --where cohort=KIRP --where method=gated_post_attention --where seed=42 --dry-run
+  --cohort=KIRP --method=gated_post_attention --seed=42 --dry-run
 
 # One neighborhood-size row
 python scripts/run_manifest.py configs/neighborhood_sizes.tsv \
-  --where dataset=LUAD --where window=3x3 --where seed=42 --dry-run
+  --dataset=LUAD --window=3x3 --seed=42 --dry-run
 ```
 
-Remove `--dry-run` to execute. Running a manifest without filters executes its
+Remove `--dry-run` to execute. Running a manifest without selectors executes its
 complete released matrix:
 
 ```bash
@@ -162,15 +162,15 @@ python scripts/collect_task_results.py --strict
 
 This writes task summaries to `results/rerun/`.
 
-For a first one-row run, repeat the launch filters during collection. Filters
+For a first one-row run, repeat the launch selectors during collection. Selectors
 are applied before `--strict` checks, so this validates exactly the selected
 artifact instead of requiring the full matrix:
 
 ```bash
 python scripts/collect_task_results.py \
-  --where cohort=KIRP \
-  --where method=gated_post_attention \
-  --where seed=42 \
+  --cohort=KIRP \
+  --method=gated_post_attention \
+  --seed=42 \
   --strict
 ```
 
