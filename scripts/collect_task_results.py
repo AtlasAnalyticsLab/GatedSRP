@@ -76,7 +76,6 @@ def collect_classification(
     out_root: Path,
     strict: bool,
     *,
-    public_only: bool = False,
     filters: list[tuple[str, str]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
@@ -85,8 +84,6 @@ def collect_classification(
         # Apply filters before strict artifact checks so one selected launcher
         # row can be validated without requiring the rest of the run matrix.
         if not row_matches(row, filters or []):
-            continue
-        if public_only and row.get("access", "public") != "public":
             continue
         artifact = out_root / row["run_name"] / "test_artifacts.npz"
         if not artifact.exists():
@@ -132,15 +129,12 @@ def collect_survival(
     out_root: Path,
     strict: bool,
     *,
-    public_only: bool = False,
     filters: list[tuple[str, str]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     per_run: list[dict] = []
     missing: list[str] = []
     for row in read_tsv(manifest):
         if not row_matches(row, filters or []):
-            continue
-        if public_only and row.get("access", "public") != "public":
             continue
         path = out_root / row["run_name"] / "metrics.json"
         if not path.exists():
@@ -211,11 +205,6 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("results/rerun"))
     parser.add_argument("--strict", action="store_true", help="Fail if any manifest artifact is missing.")
     parser.add_argument(
-        "--public-only",
-        action="store_true",
-        help="Skip manifest rows marked access=restricted.",
-    )
-    parser.add_argument(
         "--where",
         action="append",
         type=parse_key_value,
@@ -231,14 +220,12 @@ def main() -> None:
         args.classification_manifest,
         args.classification_runs,
         args.strict,
-        public_only=args.public_only,
         filters=args.where,
     )
     surv_per, surv_summary = collect_survival(
         args.survival_manifest,
         args.survival_runs,
         args.strict,
-        public_only=args.public_only,
         filters=args.where,
     )
     # A misspelled filter would otherwise produce empty TSV files while

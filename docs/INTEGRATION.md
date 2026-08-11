@@ -1,7 +1,7 @@
 # Integrating GatedSRP
 
 GatedSRP changes the patch-token attention update, not the task head. A model
-needs patch coordinates, a local neighbor graph, and access to the per-patch
+needs patch coordinates, a local neighbor graph, and the per-patch
 attention stream. Existing positional encoding, residual connections, and CLS
 readout can remain unchanged.
 

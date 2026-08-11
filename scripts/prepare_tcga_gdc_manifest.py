@@ -26,7 +26,6 @@ FIELDS = (
     "data_type",
     "data_format",
     "data_category",
-    "access",
     "cases.submitter_id",
     "cases.project.project_id",
 )
@@ -244,7 +243,6 @@ def write_outputs(
         "gdc_file_id",
         "gdc_project",
         "gdc_case_submitter_id",
-        "access",
         "state",
         "md5sum",
         "file_size",
@@ -266,7 +264,6 @@ def write_outputs(
                     "gdc_file_id": hit["file_id"],
                     "gdc_project": _case_project(hit),
                     "gdc_case_submitter_id": _case_submitter(hit),
-                    "access": hit.get("access", ""),
                     "state": hit.get("state", ""),
                     "md5sum": hit.get("md5sum", ""),
                     "file_size": hit.get("file_size", ""),

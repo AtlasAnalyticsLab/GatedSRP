@@ -57,8 +57,8 @@ python -m pytest tests -q
 ## 2. Prepare Data and Paths
 
 Follow [DATASETS.md](DATASETS.md) to acquire raw slides and
-[EMBEDDINGS.md](EMBEDDINGS.md) to generate AtlasPatch H5 files. Public labels
-used by the manifests are under `data/labels/`.
+[EMBEDDINGS.md](EMBEDDINGS.md) to generate AtlasPatch H5 files. Labels used by
+the released manifests are under `data/labels/`.
 
 The data do not need to live inside the repository:
 
@@ -78,9 +78,9 @@ python scripts/validate_h5_embeddings.py \
   --expected-dim 1536
 ```
 
-KGH rows are marked `access=restricted`. They remain useful to authorized
-users, but cannot be reproduced from this repository alone because KGH labels,
-slides, and embeddings are not distributed.
+KGH labels, slides, embeddings, and runnable matrix rows are not distributed.
+The loader and trainer support remain available for researchers who already
+have the private cohort in the documented directory layout.
 
 ## 3. Select a Manifest
 
@@ -88,15 +88,15 @@ The manifests are indexed by the experimental variable they evaluate:
 
 | Type | Evaluation | Rows | Manifest | Default output root |
 |---|---|---:|---|---|
-| Prediction task | WSI classification | 100 | `configs/classification_tasks.tsv` | `runs/classification` |
+| Prediction task | WSI classification | 80 | `configs/classification_tasks.tsv` | `runs/classification` |
 | Prediction task | TCGA overall survival | 100 | `configs/survival_tasks.tsv` | `runs/survival_tasks` |
 | Attention | Dense operators on ADP and PANDA | 20 | `configs/attention_operators.tsv` | `runs/attention_operators` |
 | Slide backbone | SPAN, LongNet, and dense MHSA | 150 | `configs/slide_backbones.tsv` | `runs/slide_backbones` |
 | MIL model | ABMIL, DSMIL, and TransMIL | 60 | `configs/mil_models.tsv` | `runs/mil_models` |
-| Patch representation | UNI-v2, MedSigLIP-448, and ViT-B/16 | 180 | `configs/patch_encoders.tsv` | `runs/patch_encoders` |
-| GatedSRP design | Projection, range, gradients, factorization, and initialization | 480 | `configs/component_variants.tsv` | `runs/component_variants` |
-| Spatial context | `3x3`, `5x5`, and `7x7` neighborhoods | 90 | `configs/neighborhood_sizes.tsv` | `runs/neighborhood_sizes` |
-| Coefficient design | Selected range versus direct bounded beta | 60 | `configs/coefficient_parameterizations.tsv` | `runs/coefficient_parameterizations` |
+| Patch representation | UNI-v2, MedSigLIP-448, and ViT-B/16 | 150 | `configs/patch_encoders.tsv` | `runs/patch_encoders` |
+| GatedSRP design | Projection, range, gradients, factorization, and initialization | 400 | `configs/component_variants.tsv` | `runs/component_variants` |
+| Spatial context | `3x3`, `5x5`, and `7x7` neighborhoods | 75 | `configs/neighborhood_sizes.tsv` | `runs/neighborhood_sizes` |
+| Coefficient design | Selected range versus direct bounded beta | 50 | `configs/coefficient_parameterizations.tsv` | `runs/coefficient_parameterizations` |
 | Efficiency | Three-epoch PANDA and five-cohort TCGA profiles | 24 | `configs/runtime_efficiency.tsv` | `runs/runtime_efficiency` |
 
 Full quality evaluations use seeds `42, 43, 44, 45, 46`. The efficiency profile uses
@@ -109,7 +109,7 @@ quality.
 command before execution.
 
 ```bash
-# One public classification row
+# One classification row
 python scripts/run_manifest.py configs/classification_tasks.tsv \
   --where dataset=cam16 --where method=baseline --where seed=42 --dry-run
 
@@ -122,16 +122,13 @@ python scripts/run_manifest.py configs/neighborhood_sizes.tsv \
   --where dataset=LUAD --where window=3x3 --where seed=42 --dry-run
 ```
 
-Remove `--dry-run` to execute. Run all publicly accessible rows with the access
-filter:
+Remove `--dry-run` to execute. Running a manifest without filters executes its
+complete released matrix:
 
 ```bash
-python scripts/run_manifest.py configs/survival_tasks.tsv --where access=public
-python scripts/run_manifest.py configs/neighborhood_sizes.tsv --where access=public
+python scripts/run_manifest.py configs/survival_tasks.tsv
+python scripts/run_manifest.py configs/neighborhood_sizes.tsv
 ```
-
-Authorized KGH users can omit the access filter. Every manifest uses the same
-`public`/`restricted` convention.
 
 Use `--start-at <run_name>` to resume a manifest from a named row. Existing run
 directories are not silently deleted; choose a new output root or remove an
@@ -160,7 +157,7 @@ local graph is rebuilt using nearest retained coordinates.
 The task collector handles classification and survival manifests:
 
 ```bash
-python scripts/collect_task_results.py --public-only --strict
+python scripts/collect_task_results.py --strict
 ```
 
 This writes task summaries to `results/rerun/`.
@@ -174,7 +171,7 @@ python scripts/collect_task_results.py \
   --where cohort=KIRP \
   --where method=gated_post_attention \
   --where seed=42 \
-  --public-only --strict
+  --strict
 ```
 
 The generic collector accepts each typed comparison manifest and its output
@@ -183,35 +180,35 @@ root:
 ```bash
 python scripts/collect_comparison_results.py configs/attention_operators.tsv \
   --run-root "${GATEDSRP_ATTENTION_OUT:-runs/attention_operators}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/component_variants.tsv \
   --run-root "${GATEDSRP_COMPONENT_OUT:-runs/component_variants}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/patch_encoders.tsv \
   --run-root "${GATEDSRP_PATCH_ENCODER_OUT:-runs/patch_encoders}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/slide_backbones.tsv \
   --run-root "${GATEDSRP_BACKBONE_OUT:-runs/slide_backbones}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/mil_models.tsv \
   --run-root "${GATEDSRP_MIL_OUT:-runs/mil_models}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/coefficient_parameterizations.tsv \
   --run-root "${GATEDSRP_COEFFICIENT_OUT:-runs/coefficient_parameterizations}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/neighborhood_sizes.tsv \
   --run-root "${GATEDSRP_NEIGHBORHOOD_OUT:-runs/neighborhood_sizes}" \
-  --public-only --strict
+  --strict
 
 python scripts/collect_comparison_results.py configs/runtime_efficiency.tsv \
   --run-root "${GATEDSRP_RUNTIME_OUT:-runs/runtime_efficiency}" \
-  --public-only --strict
+  --strict
 ```
 
 Each invocation writes selected-metric `per_seed.tsv` and `summary.tsv`, plus

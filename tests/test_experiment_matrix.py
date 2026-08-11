@@ -1,4 +1,4 @@
-"""Regression tests for the public typed-comparison components."""
+"""Regression tests for the released typed-comparison components."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ from slide_level_srp.src.srp_attention import (
 
 
 def read_manifest_rows(path: Path) -> list[dict[str, str]]:
-    """Read a public command manifest without changing field values."""
+    """Read a command manifest without changing field values."""
     with path.open(encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
 
@@ -168,6 +168,19 @@ def test_quality_manifests_pin_reported_context_arithmetic(
         command = row["command"]
         assert "--srp_context_impl stacked" in command, row["run_name"]
         assert "--srp_correction_chunk_size 0" in command, row["run_name"]
+
+
+def test_manifests_exclude_access_policy_and_undistributed_kgh_rows() -> None:
+    """Released matrices must be runnable without policy metadata or KGH data."""
+    for manifest in sorted((REPO_ROOT / "configs").glob("*.tsv")):
+        with manifest.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            fields = set(reader.fieldnames or [])
+            rows = list(reader)
+        assert "access" not in fields, manifest.name
+        assert all(row.get("dataset", "").lower() != "kgh" for row in rows), (
+            manifest.name
+        )
 
 
 def test_efficiency_manifest_pins_streamed_chunked_context() -> None:
@@ -347,16 +360,16 @@ def test_runtime_summary_includes_complete_tcga_mean() -> None:
     assert tcga_mean["runs"] == 5
 
 
-def test_strict_public_collection_skips_restricted_rows(tmp_path: Path) -> None:
-    """A public rerun must not require artifacts from the restricted cohort."""
+def test_strict_filtered_collection_ignores_unselected_rows(tmp_path: Path) -> None:
+    """A selected rerun must not require artifacts from unselected rows."""
     manifest = tmp_path / "classification.tsv"
     manifest.write_text(
-        "dataset\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
-        "cam16\tbaseline\tNA\t42\tpublic_run\tpublic\tpython train.py\n"
-        "kgh\tbaseline\tNA\t42\trestricted_run\trestricted\tpython train.py\n",
+        "dataset\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
+        "cam16\tbaseline\tNA\t42\tcam16_run\tpython train.py\n"
+        "bracs\tbaseline\tNA\t42\tbracs_run\tpython train.py\n",
         encoding="utf-8",
     )
-    run_dir = tmp_path / "runs" / "public_run"
+    run_dir = tmp_path / "runs" / "cam16_run"
     run_dir.mkdir(parents=True)
     np.savez(
         run_dir / "test_artifacts.npz",
@@ -367,10 +380,10 @@ def test_strict_public_collection_skips_restricted_rows(tmp_path: Path) -> None:
         manifest,
         tmp_path / "runs",
         strict=True,
-        public_only=True,
+        filters=[("dataset", "cam16")],
     )
 
-    assert [row["run_name"] for row in per_run] == ["public_run"]
+    assert [row["run_name"] for row in per_run] == ["cam16_run"]
     assert len(summary) == 1
     assert summary[0]["dataset"] == "cam16"
 
@@ -382,15 +395,15 @@ def test_task_collector_strictly_validates_one_filtered_run(
     """Launcher-style filters should support a strict one-run reproduction."""
     classification_manifest = tmp_path / "classification.tsv"
     classification_manifest.write_text(
-        "dataset\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
-        "cam16\tbaseline\tNA\t42\tcam16_s42\tpublic\tpython train.py\n",
+        "dataset\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
+        "cam16\tbaseline\tNA\t42\tcam16_s42\tpython train.py\n",
         encoding="utf-8",
     )
     survival_manifest = tmp_path / "survival.tsv"
     survival_manifest.write_text(
-        "cohort\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
-        "KIRP\tgated_post_attention\tGated SRP\t42\tkirp_s42\tpublic\tpython train.py\n"
-        "KIRP\tgated_post_attention\tGated SRP\t43\tkirp_s43\tpublic\tpython train.py\n",
+        "cohort\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
+        "KIRP\tgated_post_attention\tGated SRP\t42\tkirp_s42\tpython train.py\n"
+        "KIRP\tgated_post_attention\tGated SRP\t43\tkirp_s43\tpython train.py\n",
         encoding="utf-8",
     )
     survival_run = tmp_path / "survival-runs" / "kirp_s42"
@@ -431,7 +444,6 @@ def test_task_collector_strictly_validates_one_filtered_run(
             "method=gated_post_attention",
             "--where",
             "seed=42",
-            "--public-only",
             "--strict",
         ],
     )
@@ -450,15 +462,15 @@ def test_task_collector_strict_filter_rejects_empty_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A misspelled strict filter must not look like a successful rerun."""
-    header = "dataset\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n"
+    header = "dataset\tmethod\tmethod_label\tseed\trun_name\tcommand\n"
     classification_manifest = tmp_path / "classification.tsv"
     classification_manifest.write_text(
-        header + "cam16\tbaseline\tNA\t42\tcam16_s42\tpublic\tpython train.py\n",
+        header + "cam16\tbaseline\tNA\t42\tcam16_s42\tpython train.py\n",
         encoding="utf-8",
     )
     survival_manifest = tmp_path / "survival.tsv"
     survival_manifest.write_text(
-        "cohort\tmethod\tmethod_label\tseed\trun_name\taccess\tcommand\n",
+        "cohort\tmethod\tmethod_label\tseed\trun_name\tcommand\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -547,9 +559,9 @@ def test_comparison_collector_writes_selected_and_all_metric_tables(
     """The CLI output contract must cover multi-metric comparison rows."""
     manifest = tmp_path / "attention_operators.tsv"
     manifest.write_text(
-        "dataset\tmethod\tseed\taccess\trun_name\tcommand\n"
-        "ADP\tMHSA\t42\tpublic\tadp_s42\tpython train.py\n"
-        "ADP\tMHSA\t43\tpublic\tadp_s43\tpython train.py\n",
+        "dataset\tmethod\tseed\trun_name\tcommand\n"
+        "ADP\tMHSA\t42\tadp_s42\tpython train.py\n"
+        "ADP\tMHSA\t43\tadp_s43\tpython train.py\n",
         encoding="utf-8",
     )
     run_root = tmp_path / "runs"
@@ -576,7 +588,6 @@ def test_comparison_collector_writes_selected_and_all_metric_tables(
             str(run_root),
             "--out-dir",
             str(out_dir),
-            "--public-only",
             "--strict",
         ],
     )

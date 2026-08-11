@@ -60,7 +60,7 @@ uv pip install atlas-patch
 uv pip install git+https://github.com/facebookresearch/sam2.git
 ```
 
-UNI-v2 is gated on Hugging Face. Request access to `MahmoodLab/UNI2-h` and set
+Accept the model terms for `MahmoodLab/UNI2-h` on Hugging Face and set
 `HF_TOKEN` before extraction. AtlasPatch skips an existing per-slide H5 by
 default; pass `--force` to the launcher only when you intend to rebuild it.
 

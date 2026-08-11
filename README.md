@@ -187,7 +187,7 @@ python scripts/run_manifest.py configs/classification_tasks.tsv \
 ```bash
 python scripts/collect_task_results.py \
   --where dataset=cam16 --where method=baseline --where seed=42 \
-  --public-only --strict
+  --strict
 ```
 
 TCGA is fully enumerated by the checked-in OS label table. The helper either
@@ -201,34 +201,31 @@ TCGA_EXISTING_SLIDE_DIRS=/shared/gdc/tcga-slides \
 ```
 
 See [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) for every dataset-specific
-AtlasPatch command and H5 layout. KGH is a restricted cohort: its loader and
-manifest rows are retained, but no KGH labels, slides, or embeddings are
-distributed.
+AtlasPatch command and H5 layout. KGH is a private cohort, so its labels,
+slides, embeddings, and runnable matrix rows are not distributed. The KGH
+loader and trainer support remain in the codebase for use with local data.
 
 ## Reproduce Every Evaluation
 
 ```bash
 # Prediction tasks
-python scripts/run_manifest.py configs/classification_tasks.tsv --where access=public
-python scripts/run_manifest.py configs/survival_tasks.tsv --where access=public
+python scripts/run_manifest.py configs/classification_tasks.tsv
+python scripts/run_manifest.py configs/survival_tasks.tsv
 
 # Attention, slide backbones, MIL models, and patch representations
-python scripts/run_manifest.py configs/attention_operators.tsv --where access=public
-python scripts/run_manifest.py configs/slide_backbones.tsv --where access=public
-python scripts/run_manifest.py configs/mil_models.tsv --where access=public
-python scripts/run_manifest.py configs/patch_encoders.tsv --where access=public
+python scripts/run_manifest.py configs/attention_operators.tsv
+python scripts/run_manifest.py configs/slide_backbones.tsv
+python scripts/run_manifest.py configs/mil_models.tsv
+python scripts/run_manifest.py configs/patch_encoders.tsv
 
 # GatedSRP components and spatial design
-python scripts/run_manifest.py configs/component_variants.tsv --where access=public
-python scripts/run_manifest.py configs/neighborhood_sizes.tsv --where access=public
-python scripts/run_manifest.py configs/coefficient_parameterizations.tsv --where access=public
+python scripts/run_manifest.py configs/component_variants.tsv
+python scripts/run_manifest.py configs/neighborhood_sizes.tsv
+python scripts/run_manifest.py configs/coefficient_parameterizations.tsv
 
 # Runtime and memory
-python scripts/run_manifest.py configs/runtime_efficiency.tsv --where access=public
+python scripts/run_manifest.py configs/runtime_efficiency.tsv
 ```
-
-Authorized KGH users can omit `--where access=public` from manifests containing
-restricted rows.
 
 Official SPAN and Prov-GigaPath LongNet rows require optional checkouts and
 their native dependencies:
@@ -240,11 +237,11 @@ bash scripts/setup_optional_architectures.sh
 Collect task and typed-comparison outputs:
 
 ```bash
-python scripts/collect_task_results.py --public-only --strict
+python scripts/collect_task_results.py --strict
 
 python scripts/collect_comparison_results.py configs/neighborhood_sizes.tsv \
   --run-root "${GATEDSRP_NEIGHBORHOOD_OUT:-runs/neighborhood_sizes}" \
-  --public-only --strict
+  --strict
 ```
 
 The complete run matrix, expected artifacts, output roots, and compute notes

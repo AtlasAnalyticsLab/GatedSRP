@@ -13,7 +13,7 @@ import numpy as np
 
 
 SURVIVAL_DATASETS = {"KIRC", "KIRP", "LUAD", "STAD", "UCEC"}
-MANIFEST_METADATA = {"command", "run_name", "seed", "access"}
+MANIFEST_METADATA = {"command", "run_name", "seed"}
 RUNTIME_FIELDS = (
     "peak_reserved_gib",
     "train_wsi_per_second",
@@ -22,7 +22,7 @@ RUNTIME_FIELDS = (
 
 
 def read_manifest(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    """Read a command manifest while preserving its public grouping columns."""
+    """Read a command manifest while preserving its grouping columns."""
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         fields = list(reader.fieldnames or [])
@@ -164,7 +164,7 @@ def summarize_runtime(
         summary.append(item)
 
     # The resource table compares a single PANDA profile with the arithmetic
-    # mean of the five public TCGA cohorts. Derive that aggregate directly from
+    # mean of the five TCGA cohorts. Derive that aggregate directly from
     # the collected rows so no manual spreadsheet step is required.
     if "dataset" in group_fields:
         non_dataset_fields = [field for field in group_fields if field != "dataset"]
@@ -235,20 +235,9 @@ def main() -> None:
         action="store_true",
         help="Fail when any selected run artifact is missing.",
     )
-    parser.add_argument(
-        "--public-only",
-        action="store_true",
-        help="Skip manifest rows marked access=restricted.",
-    )
     args = parser.parse_args()
 
     manifest_fields, manifest_rows = read_manifest(args.manifest)
-    if args.public_only:
-        # Missing access defaults to public for compatibility with custom
-        # manifests that predate the explicit access column.
-        manifest_rows = [
-            row for row in manifest_rows if row.get("access", "public") == "public"
-        ]
     group_fields = [field for field in manifest_fields if field not in MANIFEST_METADATA]
     out_dir = args.out_dir or Path("results/rerun") / args.manifest.stem
     per_run: list[dict[str, object]] = []

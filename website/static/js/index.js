@@ -45,7 +45,7 @@
         button.textContent = 'Copied';
         window.setTimeout(() => { button.textContent = original; }, 1600);
       } catch {
-        // Clipboard access can be unavailable on local or restricted origins;
+        // The Clipboard API can be unavailable on local or restricted origins;
         // the visible source remains selectable as a reliable fallback.
         button.textContent = 'Select text';
       }

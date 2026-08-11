@@ -100,22 +100,22 @@ them or set `TCGA_STAGE_DUPLICATE_POLICY=first`.
 | PANDA | PANDA Grand Challenge page points to Kaggle: https://panda.grand-challenge.org/data/ | `data/labels/panda/train.csv`, ISUP grade 0-5. |
 | BRACS | BRACS site: https://www.bracs.icar.cnr.it/ | `BRACS.xlsx`, sheet `WSI_Information`, column `WSI label`. |
 | TCGA survival | NCI GDC Data Portal: https://portal.gdc.cancer.gov/ | OS labels from the matched label CSV described below. Use `scripts/download_tcga_slides.sh` or the manual GDC manifest workflow below to download the exact SVS files. |
-| KGH | Private cohort; local access is required. | Labels are not redistributed. The loader derives the four private class labels from `${KGH_RAW_ROOT}/{train,test}/{CP_HP,CP_SSL,CP_TA,CP_TVA}/`; normal slides are excluded. |
+| KGH | Private cohort; not distributed by this repository. | Labels are not redistributed. The loader derives the four private class labels from `${KGH_RAW_ROOT}/{train,test}/{CP_HP,CP_SSL,CP_TA,CP_TVA}/`; normal slides are excluded. |
 | ADP | ADP Release1 data. | `data/labels/adp/ADP_EncodedLabels_Release1_Flat.csv` with the official train/valid/test split files from the raw release. |
 
 ## Which Data Each Manifest Needs
 
 | Manifest | Required datasets |
 |---|---|
-| `classification_tasks.tsv` | CAMELYON16, CAMELYON17, KGH, PANDA, BRACS |
+| `classification_tasks.tsv` | CAMELYON16, CAMELYON17, PANDA, BRACS |
 | `survival_tasks.tsv` | TCGA-KIRC, TCGA-KIRP, TCGA-LUAD, TCGA-STAD, TCGA-UCEC |
 | `attention_operators.tsv` | ADP Release1 and PANDA |
-| `component_variants.tsv` | KIRP, LUAD, STAD, KGH, PANDA, BRACS, plus selected CAMELYON settings encoded in the manifest |
-| `patch_encoders.tsv` | KGH, PANDA, BRACS, TCGA-KIRP, TCGA-LUAD, TCGA-STAD with the requested encoder features |
+| `component_variants.tsv` | KIRP, LUAD, STAD, PANDA, BRACS, plus selected CAMELYON settings encoded in the manifest |
+| `patch_encoders.tsv` | PANDA, BRACS, TCGA-KIRP, TCGA-LUAD, TCGA-STAD with the requested encoder features |
 | `slide_backbones.tsv` | TCGA-KIRP/LUAD/STAD, PANDA, BRACS |
 | `mil_models.tsv` | TCGA-KIRP/LUAD/STAD/UCEC |
-| `neighborhood_sizes.tsv` | TCGA-KIRP/LUAD/STAD, KGH, PANDA, BRACS |
-| `coefficient_parameterizations.tsv` | TCGA-KIRP/LUAD/STAD, KGH, PANDA, BRACS |
+| `neighborhood_sizes.tsv` | TCGA-KIRP/LUAD/STAD, PANDA, BRACS |
+| `coefficient_parameterizations.tsv` | TCGA-KIRP/LUAD/STAD, PANDA, BRACS |
 | `runtime_efficiency.tsv` | TCGA-KIRC/KIRP/LUAD/STAD/UCEC and PANDA |
 
 ## Inclusion Rules
@@ -160,9 +160,9 @@ Rows should use cohorts `TCGA_KIRC`, `TCGA_KIRP`, `TCGA_LUAD`, `TCGA_STAD`, and 
 
 The TCGA label CSV includes the exact SVS filenames used by the survival
 experiments. You can generate a GDC manifest from those filenames with the
-public GDC Files API
+GDC Files API
 (https://docs.gdc.cancer.gov/API/Users_Guide/Search_and_Retrieval/) and
-download the matching open-access slide images with the GDC Data Transfer Tool.
+download the matching slide images with the GDC Data Transfer Tool.
 
 Install `gdc-client` from the GDC Data Transfer Tool page:
 https://gdc.cancer.gov/access-data/gdc-data-transfer-tool
@@ -219,7 +219,7 @@ python scripts/stage_tcga_existing_slides.py \
   --mode symlink
 ```
 
-If the GDC API changes or a network policy blocks API access, use the GDC Data
+If the GDC API changes or your network blocks API requests, use the GDC Data
 Portal manually: filter to each TCGA project, select `Slide Image` / `SVS`
 files whose names appear in `data/labels/tcga_survival/all_matched_survival_labels_long.csv`
 for `endpoint=OS` and `has_nonpositive_time=False`, download a manifest from
