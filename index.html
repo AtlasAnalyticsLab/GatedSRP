@@ -94,34 +94,9 @@
           <figcaption>Local feature similarity varies within and across slides, motivating a context-dependent intervention.</figcaption>
         </figure>
 
-        <div class="method-explanation">
-          <article class="method-concept">
-            <p class="concept-label">Local spatial reference</p>
-            <h3>Measure what repeats nearby</h3>
-            <p>The detached value vectors from each valid 3x3 patch neighborhood are averaged and normalized into a local tissue-redundancy axis.</p>
-            <code>r̂ᵢ = normalize(mean<sub>j∈N(i)</sub> vⱼ)</code>
-          </article>
-          <article class="method-concept">
-            <p class="concept-label">Token- and head-specific decision</p>
-            <h3>Adapt the correction to context</h3>
-            <p>Local homogeneity, neighbor availability, and attention alignment drive a bounded signed gate. Zero initialization makes the first update identical to the original attention layer.</p>
-            <code>βᵢ = δ tanh(gᵢ)</code>
-          </article>
-        </div>
-
-        <div class="core-update" aria-label="GatedSRP update equation">
-          <div>
-            <span>One geometric correction</span>
-            <code>zᵢ = yᵢ − βᵢ ⟨yᵢ, r̂ᵢ⟩ r̂ᵢ</code>
-          </div>
-          <p>Only the neighborhood-aligned component changes. The remaining attention information, CLS token, output projection, residual path, and task head stay intact.</p>
-        </div>
-
-        <div class="gate-regimes" aria-label="Meaning of the signed gate coefficient">
-          <div class="gate-regime regime-reinforce"><span>β &lt; 0</span><strong>Reinforce</strong><small>Increase useful local context.</small></div>
-          <div class="gate-regime regime-identity"><span>β = 0</span><strong>Preserve</strong><small>Recover the original attention update.</small></div>
-          <div class="gate-regime regime-project"><span>0 &lt; β ≤ 1</span><strong>Reduce</strong><small>Partly or fully remove redundancy.</small></div>
-          <div class="gate-regime regime-reflect"><span>1 &lt; β ≤ 2</span><strong>Reflect</strong><small>Move beyond full projection.</small></div>
+        <div class="method-summary">
+          <p><strong>Local reference.</strong> For each patch token, GatedSRP averages the detached value vectors in its valid 3x3 neighborhood and normalizes the result into a local tissue-redundancy axis, <code>r̂ᵢ = normalize(mean<sub>j∈N(i)</sub> vⱼ)</code>.</p>
+          <p><strong>Adaptive signed correction.</strong> A token- and head-specific gate predicts <code>βᵢ = δ tanh(gᵢ)</code> and updates the attention contribution as <code>zᵢ = yᵢ − βᵢ ⟨yᵢ, r̂ᵢ⟩ r̂ᵢ</code>. A negative β <strong class="regime-word reinforce-word">reinforces</strong> useful local context, β = 0 <strong class="regime-word preserve-word">preserves</strong> the original update, 0 &lt; β ≤ 1 <strong class="regime-word reduce-word">reduces</strong> the redundant component, and 1 &lt; β ≤ 2 <strong class="regime-word reflect-word">reflects</strong> it beyond full projection. Zero initialization starts from the preserve case.</p>
         </div>
       </div>
     </section>
@@ -130,14 +105,13 @@
       <div class="content-shell">
         <div class="section-heading">
           <h2 id="evidence-title">Results</h2>
-          <p>Five-seed evaluation across survival, classification, attention backbones, MIL models, design choices, and measured resource use.</p>
+          <p>Five-seed evaluation across survival, classification, MIL models, design choices, and measured resource use.</p>
         </div>
 
         <div class="tabs" data-tabs>
           <div class="tab-list" role="tablist" aria-label="Result views">
             <button id="tab-survival" role="tab" aria-selected="true" aria-controls="panel-survival" tabindex="0">Survival</button>
             <button id="tab-classification" role="tab" aria-selected="false" aria-controls="panel-classification" tabindex="-1">Classification</button>
-            <button id="tab-backbones" role="tab" aria-selected="false" aria-controls="panel-backbones" tabindex="-1">Slide backbones</button>
             <button id="tab-mil" role="tab" aria-selected="false" aria-controls="panel-mil" tabindex="-1">MIL models</button>
             <button id="tab-design" role="tab" aria-selected="false" aria-controls="panel-design" tabindex="-1">GatedSRP design</button>
             <button id="tab-efficiency" role="tab" aria-selected="false" aria-controls="panel-efficiency" tabindex="-1">Efficiency</button>
@@ -186,24 +160,6 @@
               </table>
             </div>
             <p class="result-note">The selected metric improves over NA on four datasets; CAMELYON17 is the exception. Per-seed values and all task metrics are included in the repository.</p>
-          </section>
-
-          <section id="panel-backbones" class="tab-panel" role="tabpanel" aria-labelledby="tab-backbones" hidden>
-            <div class="result-intro">
-              <h3>Slide backbone compatibility</h3>
-              <p>Baseline to GatedSRP selected metric. These runs use official SPAN and Prov-GigaPath LongNet implementations plus dense MHSA, without pretrained slide checkpoints or architecture-specific gate tuning.</p>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Architecture</th><th>KIRP</th><th>LUAD</th><th>STAD</th><th>PANDA</th><th>BRACS</th></tr></thead>
-                <tbody>
-                  <tr><th>SPAN</th><td class="positive">.7033 → .7454</td><td class="negative">.5702 → .5516</td><td class="positive">.5608 → .5730</td><td class="negative">.8722 → .8718</td><td class="negative">.4321 → .3949</td></tr>
-                  <tr><th>Prov-GigaPath LongNet</th><td class="negative">.6974 → .6612</td><td class="negative">.5680 → .5517</td><td class="positive">.5548 → .5614</td><td class="negative">.8800 → .8767</td><td class="negative">.4033 → .3840</td></tr>
-                  <tr><th>Dense MHSA</th><td class="negative">.7204 → .7199</td><td class="positive">.5537 → .5569</td><td class="positive">.5422 → .5592</td><td class="negative">.8767 → .8762</td><td class="positive">.4149 → .4276</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="result-note">The adapter is technically portable, but improvements are not universal across external backbones. This is compatibility evidence, not a claim of architecture-independent gain.</p>
           </section>
 
           <section id="panel-mil" class="tab-panel" role="tabpanel" aria-labelledby="tab-mil" hidden>
@@ -328,7 +284,6 @@
               <li><strong>Patch attention updates</strong><span>Correct patch tokens only; special tokens pass through unchanged.</span></li>
               <li><strong>A pre-residual insertion point</strong><span>Apply GatedSRP after attention and train normally from its identity initialization.</span></li>
             </ul>
-            <p class="usage-note"><strong>No task-specific rewrite.</strong> Existing losses, classifiers, and evaluation code remain in place.</p>
           </div>
 
           <div class="code-shell">
