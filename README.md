@@ -1,4 +1,4 @@
-<h1 align="center">Gated Spatial Redundancy Projection for Pathology Transformer Attentions [BMVC 2026]</h1>
+<h1 align="center">Gated Spatial Redundancy Projection for Pathology Transformer Attentions [BMVC 2026 Oral Presentation]</h1>
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10+"></a>
